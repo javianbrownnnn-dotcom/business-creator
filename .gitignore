@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Secrets — never commit
+.env
+
+# OS
+.DS_Store
+
+# NOTE: data/jobs.db is intentionally NOT ignored.
+# The GitHub Actions job-agent workflow commits it back each run so that
+# seen-job de-duplication persists across cloud runs. See README.

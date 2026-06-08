@@ -1,0 +1,6 @@
+# Core HTTP client used everywhere (job sources, Notion, ntfy).
+requests>=2.31.0
+
+# Agent 2 only — Claude Haiku classification of candidate emails.
+# Job agent (Agent 1) does NOT need this; it is stdlib + requests only.
+anthropic>=0.40.0

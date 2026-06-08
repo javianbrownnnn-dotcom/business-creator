@@ -1,0 +1,50 @@
+name: Daily Job Discovery (Agent 1)
+
+# Runs once a day. Commits the SQLite seen-jobs DB + dated digest back to the
+# repo so de-duplication persists across cloud runs.
+on:
+  schedule:
+    - cron: "0 13 * * *"   # 13:00 UTC daily (~9am ET / 8am CT). Adjust as you like.
+  workflow_dispatch: {}      # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write            # needed to commit the digest + DB back
+
+concurrency:
+  group: job-agent
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run job discovery
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+        run: python -m job_agent.main
+
+      - name: Commit digest + seen-jobs DB
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/jobs.db data/digests/ || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore(job-agent): daily digest + dedup DB [skip ci]"
+            git push
+          fi
