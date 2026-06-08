@@ -4,7 +4,11 @@ name: Daily Job Discovery (Agent 1)
 # repo so de-duplication persists across cloud runs.
 on:
   schedule:
-    - cron: "0 13 * * *"   # 13:00 UTC daily (~9am ET / 8am CT). Adjust as you like.
+    # 12:00 UTC = 8:00 AM Eastern (EDT, summer) / 7:00 AM Eastern (EST, winter).
+    # GitHub cron is fixed UTC and does NOT shift for daylight saving — bump to
+    # "0 13 * * *" in winter if you want a hard 8:00 AM ET year-round.
+    # (8:00 AM Central = "0 13 * * *" in summer / "0 14 * * *" in winter.)
+    - cron: "0 12 * * *"
   workflow_dispatch: {}      # lets you trigger a run manually from the Actions tab
 
 permissions:
