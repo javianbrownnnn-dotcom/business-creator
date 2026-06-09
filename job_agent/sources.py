@@ -174,7 +174,7 @@ def fetch_ashby(slugs):
 
 # --- The Muse -----------------------------------------------------------------
 
-def fetch_themuse(max_pages=3):
+def fetch_themuse(max_pages=5):
     out = []
     base = "https://www.themuse.com/api/public/jobs"
     for level in ("Entry Level", "Internship"):
@@ -242,41 +242,62 @@ def fetch_remoteok():
 
 # --- Adzuna (optional — needs API key) ---------------------------------------
 
-def fetch_adzuna(max_pages=2):
+def _adzuna_page(app_id, app_key, page, where=None):
+    """Fetch one Adzuna page (optionally scoped to a `where` location)."""
+    url = f"https://api.adzuna.com/v1/api/jobs/us/search/{page}"
+    params = {
+        "app_id": app_id,
+        "app_key": app_key,
+        "what": "marketing",
+        "max_days_old": config.POSTED_WITHIN_DAYS,
+        "results_per_page": 25,
+        "content-type": "application/json",
+    }
+    if where:
+        params["where"] = where
+        params["distance"] = 50  # km radius — covers the ~45-min metro you asked for
+    resp = _get(url, params=params)
+    if resp.status_code != 200:
+        print(f"[adzuna] where={where or 'US'} page {page}: HTTP {resp.status_code}")
+        return []
+    rows = []
+    for r in resp.json().get("results", []):
+        loc = (r.get("location") or {}).get("display_name", "") or ""
+        rows.append({
+            "title": r.get("title", ""),
+            "company": (r.get("company") or {}).get("display_name", ""),
+            "location": loc,
+            "remote": _looks_remote(loc, r.get("title", "")),
+            "posted_date": _iso_date(r.get("created")),
+            "source": "Adzuna",
+            "apply_url": r.get("redirect_url", ""),
+            "description": _strip_html(r.get("description", "")),
+        })
+    return rows
+
+
+def fetch_adzuna():
+    """Query each target metro (location-scoped) plus a national/remote pass."""
     app_id = os.environ.get("ADZUNA_APP_ID")
     app_key = os.environ.get("ADZUNA_APP_KEY")
     if not (app_id and app_key):
         print("[adzuna] no API key set — skipping gracefully.")
         return []
     out = []
-    for page in range(1, max_pages + 1):
-        url = f"https://api.adzuna.com/v1/api/jobs/us/search/{page}"
-        try:
-            resp = _get(url, params={
-                "app_id": app_id,
-                "app_key": app_key,
-                "what": "marketing",
-                "max_days_old": config.POSTED_WITHIN_DAYS,
-                "results_per_page": 50,
-                "content-type": "application/json",
-            })
-            if resp.status_code != 200:
-                print(f"[adzuna] page {page}: HTTP {resp.status_code}")
+    # Per-city passes (your metros, ~50km radius each).
+    for city in config.ADZUNA_CITIES:
+        for page in range(1, config.ADZUNA_PAGES_PER_CITY + 1):
+            try:
+                out += _adzuna_page(app_id, app_key, page, where=city)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[adzuna] {city} page {page}: {exc}")
                 break
-            for r in resp.json().get("results", []):
-                loc = (r.get("location") or {}).get("display_name", "") or ""
-                out.append({
-                    "title": r.get("title", ""),
-                    "company": (r.get("company") or {}).get("display_name", ""),
-                    "location": loc,
-                    "remote": _looks_remote(loc, r.get("title", "")),
-                    "posted_date": _iso_date(r.get("created")),
-                    "source": "Adzuna",
-                    "apply_url": r.get("redirect_url", ""),
-                    "description": _strip_html(r.get("description", "")),
-                })
+    # National pass (catches remote-friendly roles not tied to a city).
+    for page in range(1, config.ADZUNA_NATIONAL_PAGES + 1):
+        try:
+            out += _adzuna_page(app_id, app_key, page)
         except Exception as exc:  # noqa: BLE001
-            print(f"[adzuna] page {page}: {exc}")
+            print(f"[adzuna] national page {page}: {exc}")
             break
     return out
 

@@ -55,6 +55,48 @@ def _write_digest(rows):
     return path
 
 
+def _email_bodies(rows):
+    """Build (subject, text_body, html_body) for the daily lead email."""
+    today = date.today().isoformat()
+    n = len(rows)
+    if n:
+        subject = f"📋 {n} new marketing lead{'s' if n != 1 else ''} — {today}"
+    else:
+        subject = f"No new marketing leads today — {today}"
+
+    # Plain-text fallback.
+    text_lines = [f"{n} new marketing lead(s) added to your Job Leads board today.", ""]
+    for j in rows:
+        loc = j.get("location") or ("Remote" if j.get("remote") else "N/A")
+        text_lines.append(
+            f"[{j['fit_score']}] {j['title']} — {j.get('company','')} "
+            f"({loc}) · {j.get('source','')}\n    {j.get('apply_url','')}"
+        )
+    if not rows:
+        text_lines.append("Nothing new passed the filter today. The run executed "
+                           "fine — this just means no fresh, on-profile roles appeared.")
+    text_body = "\n".join(text_lines)
+
+    # HTML version with clickable apply links.
+    notion_url = f"https://www.notion.so/{config.JOB_NOTION_DATABASE_ID.replace('-', '')}"
+    html = [f"<h2>{n} new marketing lead{'s' if n != 1 else ''} — {today}</h2>"]
+    if rows:
+        html.append("<p>Sorted by fit score. Newest leads are in your "
+                    f'<a href="{notion_url}">Job Leads board</a>.</p><ul>')
+        for j in rows:
+            loc = j.get("location") or ("Remote" if j.get("remote") else "N/A")
+            html.append(
+                f'<li><b>[{j["fit_score"]}]</b> '
+                f'<a href="{j.get("apply_url","")}">{j["title"]}</a> — '
+                f'{j.get("company","")} · {loc} · <i>{j.get("source","")}</i></li>'
+            )
+        html.append("</ul>")
+    else:
+        html.append("<p>Nothing new passed the filter today. The run executed "
+                    "fine — no fresh, on-profile roles appeared since yesterday.</p>")
+    return subject, text_body, "\n".join(html)
+
+
 def run():
     conn = storage.connect(config.JOBS_DB_PATH)
 
@@ -73,6 +115,10 @@ def run():
             continue
         jid = storage.job_id(job.get("company"), job.get("title"), job.get("apply_url"))
         if jid in seen_ids or storage.already_seen(conn, jid):
+            continue
+        # Drop excluded Function buckets (e.g. "General Marketing") per config.
+        if scoring.classify_function(job) in config.EXCLUDED_FUNCTIONS:
+            dropped += 1
             continue
         seen_ids.add(jid)
         job["fit_score"] = scoring.score(job)
@@ -100,8 +146,13 @@ def run():
     if not notion_ok:
         print("[notion] NOTION_TOKEN not set — skipped Notion, still wrote digest + DB.")
 
-    # Backup digest + notification.
+    # Backup digest + notifications.
     _write_digest(kept)
+
+    # Daily email digest (the heartbeat that also confirms the 8 AM run fired).
+    if config.EMAIL_DIGEST_ENABLED and (kept or config.EMAIL_SEND_WHEN_ZERO):
+        subject, text_body, html_body = _email_bodies(kept)
+        notify.send_email_self(subject, text_body, html_body=html_body)
 
     if kept:
         top = kept[0]

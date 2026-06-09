@@ -19,27 +19,28 @@ JOB_NOTION_DATABASE_ID = "1c4c54e264e44b57ad86f89a20fd0d42"
 # --- Company slugs per ATS ----------------------------------------------------
 # Add/remove freely. Each slug is the {company_slug} in the public board URL.
 # Verify a slug by opening the endpoint in a browser (see README).
+# All of these are real, well-known companies that post on these PUBLIC ATS
+# boards — so every lead from them is inherently legitimate (no scam risk).
+# Unknown/expired slugs simply 404 and are skipped, so it's safe to over-list.
 GREENHOUSE_SLUGS = [
-    "stripe",
-    "airbnb",
-    "databricks",
-    "gitlab",
-    "figma",
-    "discord",
+    "stripe", "airbnb", "databricks", "gitlab", "figma", "discord",
+    "dropbox", "robinhood", "coinbase", "instacart", "doordash", "reddit",
+    "asana", "brex", "samsara", "gusto", "sofi", "affirm", "lyft",
+    "pinterest", "twitch", "cloudflare", "datadog", "hashicorp", "flexport",
+    "webflow", "faire", "airtable", "calendly", "duolingo", "grammarly",
+    "wealthsimple", "thumbtack", "cricut", "betterment",
 ]
 
 LEVER_SLUGS = [
-    "ramp",
     "plaid",
-    "notion",
-    "attentive",   # email/SMS marketing platform — strongly on-profile
+    "attentive",     # email/SMS marketing platform — strongly on-profile
+    "mozilla", "kickstarter", "ro", "fanatics", "lyst",
 ]
 
 ASHBY_SLUGS = [
-    "linear",
-    "vanta",
-    "posthog",
-    "runway",
+    "linear", "vanta", "posthog", "runway",
+    "openai", "ramp", "mercury", "clay", "hex", "watershed", "replit",
+    "gem", "browserbase", "sierra",
 ]
 
 # --- Which sources to enable --------------------------------------------------
@@ -94,6 +95,38 @@ SENIORITY_ALLOW_TOKENS = [
     "intern", "internship", "entry", "junior", "jr", "associate",
     "coordinator", " i", " ii", " 1", " 2",
 ]
+
+# --- Function exclusion -------------------------------------------------------
+# Drop roles classified into these Notion "Function" buckets. Per your request:
+# no generic "General Marketing" roles — keep Product Marketing, Email/Lifecycle,
+# Content/Copywriting, Paid Ads, and Other.
+EXCLUDED_FUNCTIONS = {"General Marketing"}
+
+# --- Legitimacy / anti-scam filter -------------------------------------------
+# Aggregators (esp. Adzuna) carry MLM / commission-only / door-to-door "marketing"
+# listings that are really sales gigs or outright scams. We DROP anything whose
+# title or description trips these signals, so you never engage with a lead that
+# could waste your time or fish for your information. ATS boards (Greenhouse /
+# Lever / Ashby) and The Muse are real companies and rarely trip these.
+SCAM_TITLE_SIGNALS = [
+    "marketing representative", "marketing agent", "retail and marketing",
+    "brand ambassador", "promoter", "canvasser", "canvassing",
+    "appointment setter", "sales representative", "door to door",
+    "door-to-door", "commission", "management trainee",
+]
+SCAM_BODY_SIGNALS = [
+    "commission only", "commission-only", "100% commission",
+    "uncapped commission", "be your own boss", "unlimited earning",
+    "unlimited income", "earning potential", "no experience necessary",
+    "no experience required", "weekly pay", "daily pay", "make money",
+    "work from home opportunity", "mlm", "multi-level", "network marketing",
+    "pyramid", "1099 commission", "independent distributor",
+]
+# Company names too vague to verify the employer is real → drop.
+VAGUE_COMPANY_NAMES = {
+    "", "n/a", "confidential", "company confidential", "established company",
+    "private company", "a leading company", "undisclosed", "various",
+}
 
 # --- Scoring weights (transparent 0-100 fit score) ---------------------------
 # Highest-priority signals first, per the profile.
@@ -167,6 +200,21 @@ LOCATION_ALLOW_TOKENS = [
 # Tokens that mark a role as remote (and remote-friendly is always allowed).
 REMOTE_TOKENS = ["remote", "anywhere", "work from home", "wfh", "distributed", "virtual"]
 
+# --- Adzuna geographic targeting ---------------------------------------------
+# Adzuna is location-aware and refreshes constantly, so it's the best lever for
+# fresh daily volume. We query each of your target metros plus a national pass.
+# Listings still go through the same keyword / seniority / scam / function
+# filters, so widening here adds coverage without lowering quality.
+ADZUNA_CITIES = [
+    "Miami, FL", "Fort Lauderdale, FL", "Orlando, FL",
+    "Nashville, TN", "Dallas, TX", "Fort Worth, TX",
+    "Denver, CO", "Colorado Springs, CO",
+    "New York, NY", "Washington, DC",
+    "Los Angeles, CA", "San Francisco, CA", "San Diego, CA",
+]
+ADZUNA_PAGES_PER_CITY = 1     # 1 page (~20 roles) per city keeps it fast
+ADZUNA_NATIONAL_PAGES = 2     # extra national pass for remote-friendly roles
+
 
 # =============================================================================
 # AGENT 2 — APPLICATION-RESPONSE TRACKER
@@ -231,6 +279,18 @@ NOISE_SENDER_DOMAINS = [
 # "ntfy" is implemented. "telegram" and "email" are documented stubs in
 # shared/notify.py.
 RESPONSE_NOTIFIER = "ntfy"
+
+
+# =============================================================================
+# DAILY EMAIL DIGEST (Agent 1)
+# =============================================================================
+# After each job-discovery run, email you a summary of how many NEW leads were
+# added (and the list, with apply links). Uses your existing Gmail credentials
+# (GMAIL_ADDRESS + GMAIL_APP_PASSWORD) over SMTP — no new secret needed.
+# The email is sent every run, so it also confirms the 8 AM job actually fired.
+EMAIL_DIGEST_ENABLED = True
+EMAIL_SEND_WHEN_ZERO = True     # still email "0 new leads today" as a heartbeat
+# Recipient defaults to GMAIL_ADDRESS; override with the EMAIL_TO env var.
 
 
 # =============================================================================
