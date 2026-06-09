@@ -1,0 +1,39 @@
+name: Application Response Tracker (Agent 2)
+
+# Runs hourly. Stateless w.r.t. the repo — dedup is handled in Notion and the
+# Gmail JobTracker/Logged label, so nothing needs to be committed back.
+on:
+  schedule:
+    - cron: "0 * * * *"    # top of every hour
+  workflow_dispatch: {}     # manual trigger for testing
+
+permissions:
+  contents: read
+
+concurrency:
+  group: response-agent
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run response tracker
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python -m response_agent.main

@@ -1,0 +1,119 @@
+"""
+Agent 1 runner — daily marketing-job discovery.
+
+Flow:  fetch -> filter -> score -> dedupe(SQLite) -> push to Notion
+       -> write dated markdown digest -> ntfy push.
+
+Run locally:   python -m job_agent.main
+Runs in CI via .github/workflows/job-agent.yml (daily).
+"""
+import os
+from datetime import date
+
+import config
+from shared import notify, notion
+from job_agent import filters, scoring, sources, storage
+
+
+def _notion_properties(job):
+    """Build the exact property map for the 'Job Leads' Notion database."""
+    return {
+        "Job Title": notion.title(job["title"]),
+        "Company": notion.rich_text(job.get("company", "")),
+        "Location": notion.rich_text(job.get("location", "") or ("Remote" if job.get("remote") else "")),
+        "Remote": notion.checkbox(job.get("remote")),
+        "Fit Score": notion.number(job.get("fit_score", 0)),
+        "Function": notion.select(scoring.classify_function(job)),
+        "Seniority": notion.select(scoring.classify_seniority(job)),
+        "Source": notion.rich_text(job.get("source", "")),
+        "Posted Date": notion.date(job.get("posted_date")),
+        "Apply": notion.url(job.get("apply_url")),
+        "Status": notion.select("New"),
+    }
+
+
+def _write_digest(rows):
+    """Write a dated markdown digest to data/digests/ as a backup/log."""
+    os.makedirs(config.DIGEST_DIR, exist_ok=True)
+    today = date.today().isoformat()
+    path = os.path.join(config.DIGEST_DIR, f"{today}.md")
+    lines = [f"# Marketing Job Digest — {today}", ""]
+    if not rows:
+        lines.append("_No new roles passed the filter today._")
+    else:
+        lines.append(f"**{len(rows)} new role(s)**, sorted by fit score.\n")
+        for j in rows:
+            remote = " · 🌐 Remote" if j.get("remote") else ""
+            lines.append(
+                f"- **[{j['fit_score']}]** [{j['title']}]({j.get('apply_url','')}) "
+                f"— {j.get('company','')} · {j.get('location','') or 'N/A'}{remote} "
+                f"· _{j.get('source','')}_ · {j.get('posted_date') or 'date n/a'}"
+            )
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"[digest] wrote {path}")
+    return path
+
+
+def run():
+    conn = storage.connect(config.JOBS_DB_PATH)
+
+    raw = sources.fetch_all()
+
+    # Filter + score, dropping anything already seen.
+    kept = []
+    seen_ids = set()
+    dropped = 0
+    for job in raw:
+        if not job.get("title") or not job.get("apply_url"):
+            continue
+        ok, reason = filters.keep(job)
+        if not ok:
+            dropped += 1
+            continue
+        jid = storage.job_id(job.get("company"), job.get("title"), job.get("apply_url"))
+        if jid in seen_ids or storage.already_seen(conn, jid):
+            continue
+        seen_ids.add(jid)
+        job["fit_score"] = scoring.score(job)
+        job["_id"] = jid
+        kept.append(job)
+
+    kept.sort(key=lambda j: j["fit_score"], reverse=True)
+    print(f"[run] {len(kept)} new role(s) kept, {dropped} filtered out.")
+
+    # Push to Notion + persist to SQLite.
+    pushed = 0
+    notion_ok = bool(os.environ.get("NOTION_TOKEN"))
+    for job in kept:
+        if notion_ok:
+            try:
+                notion.create_page(config.JOB_NOTION_DATABASE_ID, _notion_properties(job))
+                pushed += 1
+            except Exception as exc:  # noqa: BLE001
+                print(f"[notion] failed for '{job['title']}': {exc}")
+        storage.insert_job(conn, job["_id"], job)
+
+    if not notion_ok:
+        print("[notion] NOTION_TOKEN not set — skipped Notion, still wrote digest + DB.")
+
+    # Backup digest + notification.
+    _write_digest(kept)
+
+    if kept:
+        top = kept[0]
+        msg = (f"{len(kept)} new marketing roles today — top pick: "
+               f"{top['title']} @ {top.get('company','')} (fit {top['fit_score']})")
+        notify.send_ntfy(
+            msg,
+            title="Daily Marketing Jobs",
+            click_url=f"https://www.notion.so/{config.JOB_NOTION_DATABASE_ID.replace('-', '')}",
+            tags=["briefcase"],
+        )
+
+    conn.close()
+    print(f"[run] done. pushed {pushed} row(s) to Notion.")
+
+
+if __name__ == "__main__":
+    run()

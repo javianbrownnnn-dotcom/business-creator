@@ -1,0 +1,303 @@
+"""
+Job sources — each fetcher returns a list of NORMALIZED dicts:
+
+    {
+        "title":       str,
+        "company":     str,
+        "location":    str,
+        "remote":      bool,
+        "posted_date": "YYYY-MM-DD" or None,
+        "source":      str,    # e.g. "Greenhouse"
+        "apply_url":   str,
+        "description": str,    # plain-ish text used for keyword matching
+    }
+
+We deliberately use STRUCTURED, scrape-friendly endpoints (public ATS JSON +
+free public job APIs) instead of brute-forcing LinkedIn/Indeed/Glassdoor.
+
+Every fetcher is defensive: network/parse errors are caught and logged, and an
+empty list is returned so one bad source never sinks the whole run.
+"""
+import os
+import re
+import time
+from datetime import datetime, timezone
+
+import requests
+
+import config
+
+_HEADERS = {"User-Agent": config.USER_AGENT, "Accept": "application/json"}
+
+
+# --- small helpers ------------------------------------------------------------
+
+def _get(url, params=None, headers=None, timeout=None):
+    time.sleep(config.REQUEST_DELAY)  # be polite
+    return requests.get(
+        url,
+        params=params,
+        headers=headers or _HEADERS,
+        timeout=timeout or config.HTTP_TIMEOUT,
+    )
+
+
+def _strip_html(text):
+    if not text:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&[a-z]+;", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _iso_date(value):
+    """Coerce many timestamp shapes into 'YYYY-MM-DD' or None."""
+    if value is None or value == "":
+        return None
+    # epoch milliseconds (Lever) or seconds
+    if isinstance(value, (int, float)):
+        ts = value / 1000 if value > 1e12 else value
+        try:
+            return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
+    s = str(value).strip()
+    # try a few common string formats
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d",
+                "%Y-%m-%dT%H:%M:%S.%f", "%a, %d %b %Y %H:%M:%S"):
+        try:
+            return datetime.strptime(s[:len(fmt) + 6], fmt).date().isoformat()
+        except ValueError:
+            continue
+    # ISO with timezone offset, e.g. 2024-01-02T03:04:05+00:00
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _looks_remote(*texts):
+    blob = " ".join(t for t in texts if t).lower()
+    return any(tok in blob for tok in config.REMOTE_TOKENS)
+
+
+# --- Greenhouse ---------------------------------------------------------------
+
+def fetch_greenhouse(slugs):
+    out = []
+    for slug in slugs:
+        url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+        try:
+            resp = _get(url, params={"content": "true"})
+            if resp.status_code != 200:
+                print(f"[greenhouse] {slug}: HTTP {resp.status_code}")
+                continue
+            jobs = resp.json().get("jobs", [])
+            for j in jobs:
+                loc = (j.get("location") or {}).get("name", "") or ""
+                content = _strip_html(j.get("content", ""))
+                out.append({
+                    "title": j.get("title", ""),
+                    "company": slug.replace("-", " ").title(),
+                    "location": loc,
+                    "remote": _looks_remote(loc, j.get("title", "")),
+                    "posted_date": _iso_date(j.get("updated_at") or j.get("first_published")),
+                    "source": "Greenhouse",
+                    "apply_url": j.get("absolute_url", ""),
+                    "description": content,
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[greenhouse] {slug}: {exc}")
+    return out
+
+
+# --- Lever --------------------------------------------------------------------
+
+def fetch_lever(slugs):
+    out = []
+    for slug in slugs:
+        url = f"https://api.lever.co/v0/postings/{slug}"
+        try:
+            resp = _get(url, params={"mode": "json"})
+            if resp.status_code != 200:
+                print(f"[lever] {slug}: HTTP {resp.status_code}")
+                continue
+            for p in resp.json():
+                cats = p.get("categories") or {}
+                loc = cats.get("location", "") or ""
+                commitment = cats.get("commitment", "") or ""
+                desc = _strip_html(p.get("descriptionPlain") or p.get("description", ""))
+                out.append({
+                    "title": p.get("text", ""),
+                    "company": slug.replace("-", " ").title(),
+                    "location": loc,
+                    "remote": _looks_remote(loc, commitment, p.get("workplaceType", "")),
+                    "posted_date": _iso_date(p.get("createdAt")),
+                    "source": "Lever",
+                    "apply_url": p.get("hostedUrl", ""),
+                    "description": desc,
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[lever] {slug}: {exc}")
+    return out
+
+
+# --- Ashby --------------------------------------------------------------------
+
+def fetch_ashby(slugs):
+    out = []
+    for slug in slugs:
+        url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
+        try:
+            resp = _get(url, params={"includeCompensation": "false"})
+            if resp.status_code != 200:
+                print(f"[ashby] {slug}: HTTP {resp.status_code}")
+                continue
+            jobs = resp.json().get("jobs", [])
+            for j in jobs:
+                loc = j.get("location", "") or ""
+                desc = _strip_html(j.get("descriptionPlain") or j.get("descriptionHtml", ""))
+                out.append({
+                    "title": j.get("title", ""),
+                    "company": slug.replace("-", " ").title(),
+                    "location": loc,
+                    "remote": bool(j.get("isRemote")) or _looks_remote(loc),
+                    "posted_date": _iso_date(j.get("publishedAt") or j.get("updatedAt")),
+                    "source": "Ashby",
+                    "apply_url": j.get("applyUrl") or j.get("jobUrl", ""),
+                    "description": desc,
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ashby] {slug}: {exc}")
+    return out
+
+
+# --- The Muse -----------------------------------------------------------------
+
+def fetch_themuse(max_pages=3):
+    out = []
+    base = "https://www.themuse.com/api/public/jobs"
+    for level in ("Entry Level", "Internship"):
+        for page in range(max_pages):
+            try:
+                resp = _get(base, params={
+                    "category": "Marketing",
+                    "level": level,
+                    "page": page,
+                })
+                if resp.status_code != 200:
+                    break
+                results = resp.json().get("results", [])
+                if not results:
+                    break
+                for r in results:
+                    locs = [l.get("name", "") for l in (r.get("locations") or [])]
+                    loc = ", ".join(locs)
+                    out.append({
+                        "title": r.get("name", ""),
+                        "company": (r.get("company") or {}).get("name", ""),
+                        "location": loc,
+                        "remote": _looks_remote(loc),
+                        "posted_date": _iso_date(r.get("publication_date")),
+                        "source": "The Muse",
+                        "apply_url": (r.get("refs") or {}).get("landing_page", ""),
+                        "description": _strip_html(r.get("contents", "")),
+                    })
+            except Exception as exc:  # noqa: BLE001
+                print(f"[themuse] page {page} ({level}): {exc}")
+                break
+    return out
+
+
+# --- RemoteOK -----------------------------------------------------------------
+
+def fetch_remoteok():
+    out = []
+    try:
+        # RemoteOK wants a browser-ish UA and returns a leading metadata element.
+        resp = _get("https://remoteok.com/api",
+                    headers={"User-Agent": config.USER_AGENT, "Accept": "application/json"})
+        if resp.status_code != 200:
+            print(f"[remoteok] HTTP {resp.status_code}")
+            return out
+        data = resp.json()
+        for r in data:
+            if not isinstance(r, dict) or "position" not in r:
+                continue  # skip the legal/metadata element
+            out.append({
+                "title": r.get("position", ""),
+                "company": r.get("company", ""),
+                "location": r.get("location", "") or "Remote",
+                "remote": True,  # everything here is remote
+                "posted_date": _iso_date(r.get("date")),
+                "source": "RemoteOK",
+                "apply_url": r.get("url", ""),
+                "description": _strip_html(r.get("description", ""))
+                + " " + " ".join(r.get("tags", [])),
+            })
+    except Exception as exc:  # noqa: BLE001
+        print(f"[remoteok] {exc}")
+    return out
+
+
+# --- Adzuna (optional — needs API key) ---------------------------------------
+
+def fetch_adzuna(max_pages=2):
+    app_id = os.environ.get("ADZUNA_APP_ID")
+    app_key = os.environ.get("ADZUNA_APP_KEY")
+    if not (app_id and app_key):
+        print("[adzuna] no API key set — skipping gracefully.")
+        return []
+    out = []
+    for page in range(1, max_pages + 1):
+        url = f"https://api.adzuna.com/v1/api/jobs/us/search/{page}"
+        try:
+            resp = _get(url, params={
+                "app_id": app_id,
+                "app_key": app_key,
+                "what": "marketing",
+                "max_days_old": config.POSTED_WITHIN_DAYS,
+                "results_per_page": 50,
+                "content-type": "application/json",
+            })
+            if resp.status_code != 200:
+                print(f"[adzuna] page {page}: HTTP {resp.status_code}")
+                break
+            for r in resp.json().get("results", []):
+                loc = (r.get("location") or {}).get("display_name", "") or ""
+                out.append({
+                    "title": r.get("title", ""),
+                    "company": (r.get("company") or {}).get("display_name", ""),
+                    "location": loc,
+                    "remote": _looks_remote(loc, r.get("title", "")),
+                    "posted_date": _iso_date(r.get("created")),
+                    "source": "Adzuna",
+                    "apply_url": r.get("redirect_url", ""),
+                    "description": _strip_html(r.get("description", "")),
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[adzuna] page {page}: {exc}")
+            break
+    return out
+
+
+# --- Orchestrator -------------------------------------------------------------
+
+def fetch_all():
+    """Run every enabled source and return one combined, normalized list."""
+    enabled = config.SOURCES_ENABLED
+    jobs = []
+    if enabled.get("greenhouse"):
+        jobs += fetch_greenhouse(config.GREENHOUSE_SLUGS)
+    if enabled.get("lever"):
+        jobs += fetch_lever(config.LEVER_SLUGS)
+    if enabled.get("ashby"):
+        jobs += fetch_ashby(config.ASHBY_SLUGS)
+    if enabled.get("themuse"):
+        jobs += fetch_themuse()
+    if enabled.get("remoteok"):
+        jobs += fetch_remoteok()
+    if enabled.get("adzuna"):
+        jobs += fetch_adzuna()
+    print(f"[sources] fetched {len(jobs)} raw postings across enabled sources.")
+    return jobs
