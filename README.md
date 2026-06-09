@@ -87,7 +87,7 @@ Everything you'll want to change lives in `config.py`:
   - `https://api.lever.co/v0/postings/<slug>?mode=json`
   - `https://api.ashbyhq.com/posting-api/job-board/<slug>`
 - **Enable / disable a source** → flip a flag in `SOURCES_ENABLED`.
-- **Keywords** → `INCLUDE_KEYWORDS`, `HARD_EXCLUDE_KEYWORDS`, `SEO_TITLE_EXCLUDE`,
+- **Keywords** → `INCLUDE_KEYWORDS`, `HARD_EXCLUDE_TOKENS`, `SEO_TITLE_EXCLUDE`,
   `DOWNRANK_KEYWORDS`.
 - **Recency window** → `POSTED_WITHIN_DAYS` (default 7).
 - **Locations** → `LOCATION_ALLOW_TOKENS` (currently remote-US + ~45-min radius

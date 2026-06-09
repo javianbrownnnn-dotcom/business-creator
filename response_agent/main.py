@@ -123,10 +123,11 @@ def run():
 
             # Write to Notion.
             try:
-                notion.create_page(
+                props = notion.adapt_properties(
                     config.RESPONSE_NOTION_DATABASE_ID,
                     _notion_properties(extracted, msg, domain),
                 )
+                notion.create_page(config.RESPONSE_NOTION_DATABASE_ID, props)
                 logged += 1
             except Exception as exc:  # noqa: BLE001
                 print(f"[notion] create failed: {exc}")

@@ -25,6 +25,13 @@ def send_ntfy(message, title=None, click_url=None, tags=None, topic=None):
         print("[notify] NTFY_TOPIC not set — skipping push notification.")
         return False
 
+    # Be forgiving about the secret's format: accept a bare topic, a full
+    # https://ntfy.sh/<topic> URL, or anything with stray slashes/whitespace.
+    topic = topic.strip().strip("/").split("/")[-1]
+    if not topic:
+        print("[notify] NTFY_TOPIC looks empty after parsing — skipping push.")
+        return False
+
     headers = {}
     if title:
         headers["Title"] = title
