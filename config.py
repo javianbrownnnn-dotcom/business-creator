@@ -70,12 +70,14 @@ INCLUDE_KEYWORDS = [
     "marketing associate", "marketing coordinator", "marketing intern",
 ]
 
-# Seniority words that disqualify a role outright.
-HARD_EXCLUDE_KEYWORDS = [
-    "senior", "sr.", "staff", "principal", "lead ", "team lead",
-    "manager", "mgr", "head of", "director", "vp ", "vice president",
-    "chief", "president",
-]
+# Seniority words that disqualify a role outright. Matched as WHOLE WORDS
+# against the title (punctuation flattened first), so "VP," / "Sr." / "Manager"
+# are all caught regardless of surrounding punctuation. "vice president" is
+# handled separately as a phrase in filters.py.
+HARD_EXCLUDE_TOKENS = {
+    "senior", "sr", "staff", "principal", "lead", "manager", "mgr",
+    "director", "vp", "chief", "president", "supervisor", "head",
+}
 
 # SEO-only roles are excluded per the profile. A role is dropped only if it is
 # *primarily* SEO (SEO in the title) — not merely mentions SEO in passing.

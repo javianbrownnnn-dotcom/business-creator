@@ -49,6 +49,55 @@ def query_database(database_id, filter_payload=None, page_size=100):
     return results
 
 
+_schema_cache = {}
+
+
+def get_schema(database_id, refresh=False):
+    """Return {property_name: notion_type} for a database (cached per run)."""
+    if not refresh and database_id in _schema_cache:
+        return _schema_cache[database_id]
+    url = f"{NOTION_API}/databases/{database_id}"
+    resp = requests.get(url, headers=_headers(), timeout=_TIMEOUT)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Notion get_schema failed {resp.status_code}: {resp.text}")
+    props = resp.json().get("properties", {})
+    schema = {name: meta.get("type") for name, meta in props.items()}
+    _schema_cache[database_id] = schema
+    return schema
+
+
+def adapt_properties(database_id, desired):
+    """
+    Reconcile our intended properties against the database's REAL schema so a
+    renamed/re-cased property never sinks the whole write.
+
+    For each desired property: keep it if the name matches exactly, else match
+    case-insensitively, else — if exactly one property in the DB has the same
+    Notion type — map onto that one (this self-heals e.g. a 'Posted Date' that
+    was actually named 'Date Posted'). Otherwise drop it with a debug line.
+    """
+    schema = get_schema(database_id)
+    by_lower = {name.lower(): name for name in schema}
+    by_type = {}
+    for name, ntype in schema.items():
+        by_type.setdefault(ntype, []).append(name)
+
+    out = {}
+    for key, value in desired.items():
+        vtype = next(iter(value))  # payload key == notion type (date/rich_text/...)
+        if key in schema:
+            out[key] = value
+        elif key.lower() in by_lower:
+            out[by_lower[key.lower()]] = value
+        elif len(by_type.get(vtype, [])) == 1:
+            actual = by_type[vtype][0]
+            print(f"[notion] mapped '{key}' -> '{actual}' (matched by type '{vtype}')")
+            out[actual] = value
+        else:
+            print(f"[notion] skipping '{key}' — no matching property in DB schema")
+    return out
+
+
 def create_page(database_id, properties):
     """Create one row in `database_id` with the given Notion `properties` dict."""
     url = f"{NOTION_API}/pages"

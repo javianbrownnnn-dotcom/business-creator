@@ -88,7 +88,10 @@ def run():
     for job in kept:
         if notion_ok:
             try:
-                notion.create_page(config.JOB_NOTION_DATABASE_ID, _notion_properties(job))
+                props = notion.adapt_properties(
+                    config.JOB_NOTION_DATABASE_ID, _notion_properties(job)
+                )
+                notion.create_page(config.JOB_NOTION_DATABASE_ID, props)
                 pushed += 1
             except Exception as exc:  # noqa: BLE001
                 print(f"[notion] failed for '{job['title']}': {exc}")

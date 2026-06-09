@@ -11,6 +11,7 @@ A posting must pass ALL of these to make the digest:
 
 Each returns (bool, reason) so the runner can log WHY something was dropped.
 """
+import re
 from datetime import date, datetime, timedelta
 
 import config
@@ -20,19 +21,32 @@ def _blob(job):
     return f"{job.get('title','')} {job.get('description','')}".lower()
 
 
+def _title_tokens(job):
+    """Lowercased title with punctuation flattened to spaces -> word set."""
+    title = (job.get("title") or "").lower()
+    norm = re.sub(r"[^a-z0-9]+", " ", title)
+    return norm, set(norm.split())
+
+
 def passes_keywords(job):
-    blob = _blob(job)
-    if not any(k in blob for k in config.INCLUDE_KEYWORDS):
-        return False, "no include-keyword match"
+    # Gate on the TITLE, not the description — incidental keyword hits in a JD
+    # (e.g. a backend role that mentions "growth") were leaking junk through.
+    title = (job.get("title") or "").lower()
+    if not any(k in title for k in config.INCLUDE_KEYWORDS):
+        return False, "no include-keyword match in title"
     return True, ""
 
 
 def passes_seniority(job):
-    title = (job.get("title") or "").lower()
-    # Hard exclude on senior signals (check title primarily).
-    for bad in config.HARD_EXCLUDE_KEYWORDS:
-        if bad in title:
-            return False, f"excluded seniority token: '{bad.strip()}'"
+    norm, tokens = _title_tokens(job)
+    # Multi-word senior signals.
+    if "vice president" in norm:
+        return False, "excluded seniority: vice president"
+    # Single-word senior signals matched as whole words (punctuation-proof:
+    # catches "VP,", "Sr.", "Manager", "Supervisor", "Lead", etc.).
+    hit = tokens & config.HARD_EXCLUDE_TOKENS
+    if hit:
+        return False, f"excluded seniority: {', '.join(sorted(hit))}"
     return True, ""
 
 
