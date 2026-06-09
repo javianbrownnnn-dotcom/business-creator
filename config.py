@@ -294,6 +294,19 @@ EMAIL_SEND_WHEN_ZERO = True     # still email "0 new leads today" as a heartbeat
 
 
 # =============================================================================
+# BIWEEKLY CLEANUP (Agent 1 maintenance) — every other Friday
+# =============================================================================
+# Archives finished/stale leads off the Job Leads board to Notion's trash
+# (recoverable for 30 days). Archives a row if EITHER:
+#   - its "Applied" checkbox is ticked, OR
+#   - it was added more than CLEANUP_STALE_DAYS ago and was never applied to.
+# The workflow runs every Friday but the script self-gates to alternating weeks
+# via ISO-week parity, so it only fires every OTHER Friday.
+CLEANUP_STALE_DAYS = 14
+CLEANUP_WEEK_PARITY = 1          # 1 = odd ISO weeks → first run Fri 2026-06-19
+
+
+# =============================================================================
 # SHARED PATHS
 # =============================================================================
 import os
