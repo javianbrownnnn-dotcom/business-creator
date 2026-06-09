@@ -5,9 +5,12 @@ A posting must pass ALL of these to make the digest:
   1. Keyword include (matches >=1 INCLUDE keyword in title/description)
   2. Not a hard-excluded seniority (senior/lead/manager/director/...)
   3. Not an SEO-primary role (SEO in the title)
-  4. Entry-ish seniority (allow-token present, or no senior signal at all)
+  4. Legitimate (not a scam/MLM/commission-only/door-to-door listing; real employer)
   5. Recent (posted within POSTED_WITHIN_DAYS; kept if date unknown)
   6. Location allowed (remote OR matches the in-person allow-list)
+
+(Note: the "no General Marketing" rule is applied in main.py after the role's
+Function is classified, not here.)
 
 Each returns (bool, reason) so the runner can log WHY something was dropped.
 """
@@ -71,6 +74,27 @@ def passes_recency(job):
     return True, ""
 
 
+def passes_legitimacy(job):
+    """
+    Drop scam / MLM / commission-only / door-to-door listings, and roles whose
+    employer can't be identified. Protects you from wasting time on (or handing
+    info to) anything that isn't a real marketing job at a real company.
+    """
+    company = (job.get("company") or "").strip().lower()
+    if company in config.VAGUE_COMPANY_NAMES:
+        return False, f"unverifiable employer ('{job.get('company')}')"
+
+    title = (job.get("title") or "").lower()
+    if any(sig in title for sig in config.SCAM_TITLE_SIGNALS):
+        return False, "scam/sales signal in title"
+
+    blob = _blob(job)
+    if any(sig in blob for sig in config.SCAM_BODY_SIGNALS):
+        return False, "scam/MLM signal in description"
+
+    return True, ""
+
+
 def passes_location(job):
     if job.get("remote"):
         return True, ""
@@ -90,7 +114,7 @@ def passes_location(job):
 def keep(job):
     """Run every filter. Return (kept: bool, reason: str)."""
     for check in (passes_keywords, passes_seniority, passes_seo,
-                  passes_recency, passes_location):
+                  passes_legitimacy, passes_recency, passes_location):
         ok, reason = check(job)
         if not ok:
             return False, reason
