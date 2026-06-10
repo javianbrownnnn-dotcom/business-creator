@@ -97,6 +97,26 @@ def _email_bodies(rows):
     return subject, text_body, "\n".join(html)
 
 
+def _email_already_sent_today():
+    """True if today's daily email has already gone out (across cron retries)."""
+    try:
+        with open(config.LAST_EMAIL_DATE_PATH, encoding="utf-8") as f:
+            return f.read().strip() == date.today().isoformat()
+    except FileNotFoundError:
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _mark_email_sent_today():
+    try:
+        os.makedirs(config.DATA_DIR, exist_ok=True)
+        with open(config.LAST_EMAIL_DATE_PATH, "w", encoding="utf-8") as f:
+            f.write(date.today().isoformat())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[email] could not record send-date: {exc}")
+
+
 def run():
     conn = storage.connect(config.JOBS_DB_PATH)
 
@@ -149,10 +169,17 @@ def run():
     # Backup digest + notifications.
     _write_digest(kept)
 
-    # Daily email digest (the heartbeat that also confirms the 8 AM run fired).
-    if config.EMAIL_DIGEST_ENABLED and (kept or config.EMAIL_SEND_WHEN_ZERO):
-        subject, text_body, html_body = _email_bodies(kept)
-        notify.send_email_self(subject, text_body, html_body=html_body)
+    # Daily email digest. Multiple morning cron attempts run for reliability, so
+    # guard to one email/day: always email when NEW leads are found; otherwise
+    # send the "0 new" heartbeat only if we haven't already emailed today.
+    if config.EMAIL_DIGEST_ENABLED:
+        should_email = bool(kept) or (
+            config.EMAIL_SEND_WHEN_ZERO and not _email_already_sent_today()
+        )
+        if should_email:
+            subject, text_body, html_body = _email_bodies(kept)
+            if notify.send_email_self(subject, text_body, html_body=html_body):
+                _mark_email_sent_today()
 
     if kept:
         top = kept[0]

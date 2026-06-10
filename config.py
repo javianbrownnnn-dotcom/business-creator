@@ -302,6 +302,9 @@ REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 DIGEST_DIR = os.path.join(DATA_DIR, "digests")
 JOBS_DB_PATH = os.path.join(DATA_DIR, "jobs.db")
+# Tracks the last date the daily email was sent, so multiple morning cron
+# attempts (added for reliability) still produce at most one email per day.
+LAST_EMAIL_DATE_PATH = os.path.join(DATA_DIR, "last_email_date.txt")
 
 # Polite HTTP defaults for all outbound scraping/API calls.
 USER_AGENT = "marketing-job-agent/1.0 (personal job search; contact via repo)"
