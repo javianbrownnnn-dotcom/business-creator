@@ -29,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so the commit-back can rebase safely
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -59,5 +61,19 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore(job-agent): daily digest + dedup DB [skip ci]"
-            git push
+            # Robust push: main may have advanced (another run / a deploy). Rebase
+            # our data-only commit onto it (prefer our generated files) and retry.
+            # Never fail the build over this — Notion is already updated.
+            pushed=0
+            for i in 1 2 3 4 5; do
+              git fetch origin main --quiet || true
+              git rebase -X theirs origin/main || git rebase --abort || true
+              if git push origin HEAD:main; then pushed=1; break; fi
+              echo "push attempt $i rejected; retrying after rebase..."; sleep 3
+            done
+            if [ "$pushed" = 1 ]; then
+              echo "committed digest + dedup DB"
+            else
+              echo "::warning::commit-back failed after retries (Notion already updated; no data lost)"
+            fi
           fi
