@@ -108,6 +108,15 @@ def create_page(database_id, properties):
     return resp.json()
 
 
+def archive_page(page_id):
+    """Move a page to Notion's trash (recoverable for 30 days). Idempotent."""
+    url = f"{NOTION_API}/pages/{page_id}"
+    resp = requests.patch(url, headers=_headers(), json={"archived": True}, timeout=_TIMEOUT)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Notion archive_page failed {resp.status_code}: {resp.text}")
+    return resp.json()
+
+
 # --- Property builders --------------------------------------------------------
 # Notion truncates rich_text/title at 2000 chars per block; we clamp defensively.
 
