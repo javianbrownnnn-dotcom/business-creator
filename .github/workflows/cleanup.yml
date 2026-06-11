@@ -1,0 +1,40 @@
+name: Biweekly Job Leads Cleanup
+
+# Fires every Friday at 12:00 UTC (8:00 AM Eastern, EDT). The script itself
+# self-gates to alternating weeks (config.CLEANUP_WEEK_PARITY), so it only
+# actually cleans every OTHER Friday — first run Fri 2026-06-19.
+on:
+  schedule:
+    - cron: "0 12 * * 5"   # every Friday 12:00 UTC
+  workflow_dispatch: {}      # manual trigger (still respects the biweekly gate)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run cleanup
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python -m job_agent.cleanup

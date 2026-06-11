@@ -4,11 +4,16 @@ name: Daily Job Discovery (Agent 1)
 # repo so de-duplication persists across cloud runs.
 on:
   schedule:
-    # 12:00 UTC = 8:00 AM Eastern (EDT, summer) / 7:00 AM Eastern (EST, winter).
-    # GitHub cron is fixed UTC and does NOT shift for daylight saving — bump to
-    # "0 13 * * *" in winter if you want a hard 8:00 AM ET year-round.
-    # (8:00 AM Central = "0 13 * * *" in summer / "0 14 * * *" in winter.)
-    - cron: "0 12 * * *"
+    # GitHub's scheduled cron is unreliable (can run hours late or skip a slot),
+    # so we attempt several times across the morning. De-dup means extra runs
+    # add no duplicate leads, and a once-per-day email guard (see main.py) means
+    # you still get at most ONE email per day. The first attempt that succeeds
+    # delivers your leads; the rest are no-ops.
+    # 12:00 UTC = 8:00 AM Eastern (EDT). Bump these +1h in winter for 8 AM EST.
+    - cron: "0 12 * * *"     # ~8:00 AM ET
+    - cron: "30 13 * * *"    # ~9:30 AM ET (backup)
+    - cron: "0 15 * * *"     # ~11:00 AM ET (backup)
+    - cron: "0 17 * * *"     # ~1:00 PM ET (last-resort backup)
   workflow_dispatch: {}      # lets you trigger a run manually from the Actions tab
 
 permissions:
@@ -24,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so the commit-back can rebase safely
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,10 +56,24 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/jobs.db data/digests/ || true
+          git add data/ || true
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
             git commit -m "chore(job-agent): daily digest + dedup DB [skip ci]"
-            git push
+            # Robust push: main may have advanced (another run / a deploy). Rebase
+            # our data-only commit onto it (prefer our generated files) and retry.
+            # Never fail the build over this — Notion is already updated.
+            pushed=0
+            for i in 1 2 3 4 5; do
+              git fetch origin main --quiet || true
+              git rebase -X theirs origin/main || git rebase --abort || true
+              if git push origin HEAD:main; then pushed=1; break; fi
+              echo "push attempt $i rejected; retrying after rebase..."; sleep 3
+            done
+            if [ "$pushed" = 1 ]; then
+              echo "committed digest + dedup DB"
+            else
+              echo "::warning::commit-back failed after retries (Notion already updated; no data lost)"
+            fi
           fi

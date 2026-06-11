@@ -294,6 +294,19 @@ EMAIL_SEND_WHEN_ZERO = True     # still email "0 new leads today" as a heartbeat
 
 
 # =============================================================================
+# BIWEEKLY CLEANUP (Agent 1 maintenance) — every other Friday
+# =============================================================================
+# Archives finished/stale leads off the Job Leads board to Notion's trash
+# (recoverable for 30 days). Archives a row if EITHER:
+#   - its "Applied" checkbox is ticked, OR
+#   - it was added more than CLEANUP_STALE_DAYS ago and was never applied to.
+# The workflow runs every Friday but the script self-gates to alternating weeks
+# via ISO-week parity, so it only fires every OTHER Friday.
+CLEANUP_STALE_DAYS = 14
+CLEANUP_WEEK_PARITY = 1          # 1 = odd ISO weeks → first run Fri 2026-06-19
+
+
+# =============================================================================
 # SHARED PATHS
 # =============================================================================
 import os
@@ -302,6 +315,9 @@ REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(REPO_ROOT, "data")
 DIGEST_DIR = os.path.join(DATA_DIR, "digests")
 JOBS_DB_PATH = os.path.join(DATA_DIR, "jobs.db")
+# Tracks the last date the daily email was sent, so multiple morning cron
+# attempts (added for reliability) still produce at most one email per day.
+LAST_EMAIL_DATE_PATH = os.path.join(DATA_DIR, "last_email_date.txt")
 
 # Polite HTTP defaults for all outbound scraping/API calls.
 USER_AGENT = "marketing-job-agent/1.0 (personal job search; contact via repo)"

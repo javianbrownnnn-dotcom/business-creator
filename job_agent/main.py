@@ -97,10 +97,58 @@ def _email_bodies(rows):
     return subject, text_body, "\n".join(html)
 
 
+def _existing_notion_keys():
+    """
+    (company, title) of every row already on the Job Leads board, lowercased.
+    Used as a second dedup layer so a stale/lost SQLite DB can never produce
+    duplicate Notion rows. Returns an empty set on any failure (fail open).
+    """
+    keys = set()
+    try:
+        rows = notion.query_database(config.JOB_NOTION_DATABASE_ID)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[dedup] couldn't load existing Notion rows (continuing): {exc}")
+        return keys
+    for page in rows:
+        title = company = ""
+        for name, prop in page.get("properties", {}).items():
+            ptype = prop.get("type")
+            if ptype == "title" and prop.get("title"):
+                title = "".join(t.get("plain_text", "") for t in prop["title"])
+            elif name.lower() == "company" and ptype == "rich_text" and prop.get("rich_text"):
+                company = "".join(t.get("plain_text", "") for t in prop["rich_text"])
+        keys.add((company.strip().lower(), title.strip().lower()))
+    print(f"[dedup] loaded {len(keys)} existing Notion row(s) for dedup.")
+    return keys
+
+
+def _email_already_sent_today():
+    """True if today's daily email has already gone out (across cron retries)."""
+    try:
+        with open(config.LAST_EMAIL_DATE_PATH, encoding="utf-8") as f:
+            return f.read().strip() == date.today().isoformat()
+    except FileNotFoundError:
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _mark_email_sent_today():
+    try:
+        os.makedirs(config.DATA_DIR, exist_ok=True)
+        with open(config.LAST_EMAIL_DATE_PATH, "w", encoding="utf-8") as f:
+            f.write(date.today().isoformat())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[email] could not record send-date: {exc}")
+
+
 def run():
     conn = storage.connect(config.JOBS_DB_PATH)
 
     raw = sources.fetch_all()
+
+    notion_ok = bool(os.environ.get("NOTION_TOKEN"))
+    existing_keys = _existing_notion_keys() if notion_ok else set()
 
     # Filter + score, dropping anything already seen.
     kept = []
@@ -116,6 +164,11 @@ def run():
         jid = storage.job_id(job.get("company"), job.get("title"), job.get("apply_url"))
         if jid in seen_ids or storage.already_seen(conn, jid):
             continue
+        # Second dedup layer: skip if this company+title is already a Notion row.
+        ckey = (job.get("company", "").strip().lower(), job.get("title", "").strip().lower())
+        if ckey in existing_keys:
+            continue
+        existing_keys.add(ckey)
         # Drop excluded Function buckets (e.g. "General Marketing") per config.
         if scoring.classify_function(job) in config.EXCLUDED_FUNCTIONS:
             dropped += 1
@@ -130,7 +183,6 @@ def run():
 
     # Push to Notion + persist to SQLite.
     pushed = 0
-    notion_ok = bool(os.environ.get("NOTION_TOKEN"))
     for job in kept:
         if notion_ok:
             try:
@@ -149,10 +201,17 @@ def run():
     # Backup digest + notifications.
     _write_digest(kept)
 
-    # Daily email digest (the heartbeat that also confirms the 8 AM run fired).
-    if config.EMAIL_DIGEST_ENABLED and (kept or config.EMAIL_SEND_WHEN_ZERO):
-        subject, text_body, html_body = _email_bodies(kept)
-        notify.send_email_self(subject, text_body, html_body=html_body)
+    # Daily email digest. Multiple morning cron attempts run for reliability, so
+    # guard to one email/day: always email when NEW leads are found; otherwise
+    # send the "0 new" heartbeat only if we haven't already emailed today.
+    if config.EMAIL_DIGEST_ENABLED:
+        should_email = bool(kept) or (
+            config.EMAIL_SEND_WHEN_ZERO and not _email_already_sent_today()
+        )
+        if should_email:
+            subject, text_body, html_body = _email_bodies(kept)
+            if notify.send_email_self(subject, text_body, html_body=html_body):
+                _mark_email_sent_today()
 
     if kept:
         top = kept[0]
