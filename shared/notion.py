@@ -89,12 +89,23 @@ def adapt_properties(database_id, desired):
             out[key] = value
         elif key.lower() in by_lower:
             out[by_lower[key.lower()]] = value
-        elif len(by_type.get(vtype, [])) == 1:
-            actual = by_type[vtype][0]
-            print(f"[notion] mapped '{key}' -> '{actual}' (matched by type '{vtype}')")
-            out[actual] = value
         else:
-            print(f"[notion] skipping '{key}' — no matching property in DB schema")
+            # Fuzzy: a same-typed property whose name contains the key (or vice
+            # versa) — handles odd names like 'date:Posted Date:start' for our
+            # 'Posted Date', even when another date property (e.g. 'Applied
+            # Date') would make the single-type fallback ambiguous.
+            same_type = by_type.get(vtype, [])
+            fuzzy = [n for n in same_type
+                     if key.lower() in n.lower() or n.lower() in key.lower()]
+            if len(fuzzy) == 1:
+                print(f"[notion] mapped '{key}' -> '{fuzzy[0]}' (fuzzy name match)")
+                out[fuzzy[0]] = value
+            elif len(same_type) == 1:
+                actual = same_type[0]
+                print(f"[notion] mapped '{key}' -> '{actual}' (matched by type '{vtype}')")
+                out[actual] = value
+            else:
+                print(f"[notion] skipping '{key}' — no matching property in DB schema")
     return out
 
 
