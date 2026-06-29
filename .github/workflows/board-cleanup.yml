@@ -1,0 +1,30 @@
+name: Job Leads Board Cleanup (on-demand)
+
+# One-off maintenance: re-judge existing Job Leads rows with the current
+# pipeline and archive misfits (RemoteOK source, too-senior titles, off-target
+# functions) to Notion's trash. Manual trigger only — never scheduled.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run board cleanup
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: python -m job_agent.board_cleanup
