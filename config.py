@@ -49,8 +49,11 @@ SOURCES_ENABLED = {
     "lever": True,
     "ashby": True,
     "themuse": True,
-    "remoteok": True,
-    "adzuna": True,   # auto-skips if ADZUNA_APP_ID / ADZUNA_APP_KEY are unset
+    "remoteok": False,   # disabled — RemoteOK now charges for API access
+    "remotive": True,    # free, no key — remote jobs, marketing category
+    "jobicy": True,      # free, no key — remote jobs, industry=marketing
+    "weworkremotely": True,  # free RSS, no key — remote marketing feeds
+    "adzuna": True,      # keyed (free dev tier); auto-skips if no ADZUNA_APP_* set
 }
 
 # --- Recency ------------------------------------------------------------------

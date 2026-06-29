@@ -21,6 +21,7 @@ empty list is returned so one bad source never sinks the whole run.
 import os
 import re
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 import requests
@@ -73,6 +74,12 @@ def _iso_date(value):
     try:
         return datetime.fromisoformat(s.replace("Z", "+00:00")).date().isoformat()
     except ValueError:
+        pass
+    # RFC-822 (RSS pubDate), e.g. "Mon, 09 Jun 2026 17:00:00 +0000"
+    try:
+        from email.utils import parsedate_to_datetime
+        return parsedate_to_datetime(s).date().isoformat()
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -240,6 +247,98 @@ def fetch_remoteok():
     return out
 
 
+# --- Remotive (free, no key) --------------------------------------------------
+
+def fetch_remotive():
+    out = []
+    try:
+        resp = _get("https://remotive.com/api/remote-jobs",
+                    params={"category": "marketing", "limit": 80})
+        if resp.status_code != 200:
+            print(f"[remotive] HTTP {resp.status_code}")
+            return out
+        for j in resp.json().get("jobs", []):
+            out.append({
+                "title": j.get("title", ""),
+                "company": j.get("company_name", ""),
+                "location": j.get("candidate_required_location", "") or "Remote",
+                "remote": True,
+                "posted_date": _iso_date(j.get("publication_date")),
+                "source": "Remotive",
+                "apply_url": j.get("url", ""),
+                "description": _strip_html(j.get("description", "")),
+            })
+    except Exception as exc:  # noqa: BLE001
+        print(f"[remotive] {exc}")
+    return out
+
+
+# --- Jobicy (free, no key) ----------------------------------------------------
+
+def fetch_jobicy():
+    out = []
+    try:
+        resp = _get("https://jobicy.com/api/v2/remote-jobs",
+                    params={"count": 50, "industry": "marketing"})
+        if resp.status_code != 200:
+            print(f"[jobicy] HTTP {resp.status_code}")
+            return out
+        for j in resp.json().get("jobs", []):
+            out.append({
+                "title": j.get("jobTitle", ""),
+                "company": j.get("companyName", ""),
+                "location": j.get("jobGeo", "") or "Remote",
+                "remote": True,
+                "posted_date": _iso_date(j.get("pubDate")),
+                "source": "Jobicy",
+                "apply_url": j.get("url", ""),
+                "description": _strip_html(j.get("jobExcerpt", "") or j.get("jobDescription", "")),
+            })
+    except Exception as exc:  # noqa: BLE001
+        print(f"[jobicy] {exc}")
+    return out
+
+
+# --- We Work Remotely (free RSS, no key) --------------------------------------
+
+def fetch_weworkremotely():
+    out = []
+    feeds = [
+        "https://weworkremotely.com/categories/remote-marketing-jobs.rss",
+        "https://weworkremotely.com/categories/remote-sales-and-marketing-jobs.rss",
+    ]
+    for url in feeds:
+        try:
+            resp = _get(url, headers={"User-Agent": config.USER_AGENT,
+                                      "Accept": "application/rss+xml"})
+            if resp.status_code != 200:
+                print(f"[wwr] {url.rsplit('/', 1)[-1]}: HTTP {resp.status_code}")
+                continue
+            root = ET.fromstring(resp.content)
+            for item in root.iter("item"):
+                raw_title = (item.findtext("title") or "").strip()
+                # WWR titles are formatted "Company: Role".
+                if ":" in raw_title:
+                    company, _, title = raw_title.partition(":")
+                    company, title = company.strip(), title.strip()
+                else:
+                    company, title = "", raw_title
+                region = (item.findtext("region") or "").strip()
+                out.append({
+                    "title": title,
+                    "company": company,
+                    "location": region or "Remote",
+                    "remote": True,
+                    "posted_date": _iso_date(item.findtext("pubDate")),
+                    "source": "We Work Remotely",
+                    "apply_url": (item.findtext("link") or "").strip(),
+                    "description": _strip_html(item.findtext("description") or ""),
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[wwr] {url.rsplit('/', 1)[-1]}: {exc}")
+    return out
+
+
 # --- Adzuna (optional — needs API key) ---------------------------------------
 
 def _adzuna_page(app_id, app_key, page, where=None):
@@ -318,6 +417,12 @@ def fetch_all():
         jobs += fetch_themuse()
     if enabled.get("remoteok"):
         jobs += fetch_remoteok()
+    if enabled.get("remotive"):
+        jobs += fetch_remotive()
+    if enabled.get("jobicy"):
+        jobs += fetch_jobicy()
+    if enabled.get("weworkremotely"):
+        jobs += fetch_weworkremotely()
     if enabled.get("adzuna"):
         jobs += fetch_adzuna()
     print(f"[sources] fetched {len(jobs)} raw postings across enabled sources.")
