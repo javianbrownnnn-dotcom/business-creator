@@ -428,7 +428,9 @@ def fetch_jsearch():
                 headers=headers,
             )
             if resp.status_code != 200:
-                print(f"[jsearch] '{query}': HTTP {resp.status_code}")
+                # Surface RapidAPI's message (e.g. "not subscribed to this API").
+                msg = (resp.text or "")[:160].replace("\n", " ")
+                print(f"[jsearch] '{query}': HTTP {resp.status_code} — {msg}")
                 continue
             for j in resp.json().get("data", []):
                 city = j.get("job_city") or ""
