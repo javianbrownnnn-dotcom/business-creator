@@ -303,8 +303,8 @@ def fetch_jobicy():
 
 def fetch_weworkremotely():
     out = []
+    # WWR consolidated marketing into the sales-and-marketing category.
     feeds = [
-        "https://weworkremotely.com/categories/remote-marketing-jobs.rss",
         "https://weworkremotely.com/categories/remote-sales-and-marketing-jobs.rss",
     ]
     for url in feeds:
