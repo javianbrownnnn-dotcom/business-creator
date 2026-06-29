@@ -415,40 +415,48 @@ def fetch_jsearch():
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
         "Accept": "application/json",
     }
+    # Some JSearch deployments serve "/search", others "/search-v2". Try the
+    # first; if it 404s as "does not exist", fall back and lock onto the one
+    # that works for the rest of the queries.
+    endpoints = ["/search", "/search-v2"]
+    working = None
     for query in config.JSEARCH_QUERIES:
-        try:
-            resp = _get(
-                "https://jsearch.p.rapidapi.com/search",
-                params={
-                    "query": f"{query} in United States",
-                    "page": 1,
-                    "num_pages": 1,
-                    "date_posted": config.JSEARCH_DATE_POSTED,
-                },
-                headers=headers,
-            )
-            if resp.status_code != 200:
-                # Surface RapidAPI's message (e.g. "not subscribed to this API").
-                msg = (resp.text or "")[:160].replace("\n", " ")
-                print(f"[jsearch] '{query}': HTTP {resp.status_code} — {msg}")
-                continue
-            for j in resp.json().get("data", []):
-                city = j.get("job_city") or ""
-                state = j.get("job_state") or ""
-                country = j.get("job_country") or ""
-                loc = ", ".join(p for p in (city, state, country) if p)
-                out.append({
-                    "title": j.get("job_title", ""),
-                    "company": j.get("employer_name", ""),
-                    "location": loc or ("Remote" if j.get("job_is_remote") else ""),
-                    "remote": bool(j.get("job_is_remote")),
-                    "posted_date": _iso_date(j.get("job_posted_at_datetime_utc")),
-                    "source": "JSearch",
-                    "apply_url": j.get("job_apply_link", ""),
-                    "description": _strip_html(j.get("job_description", "")),
-                })
-        except Exception as exc:  # noqa: BLE001
-            print(f"[jsearch] '{query}': {exc}")
+        params = {
+            "query": f"{query} in United States",
+            "page": 1,
+            "num_pages": 1,
+            "date_posted": config.JSEARCH_DATE_POSTED,
+            "country": "us",
+        }
+        for ep in ([working] if working else endpoints):
+            try:
+                resp = _get(f"https://jsearch.p.rapidapi.com{ep}", params=params, headers=headers)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[jsearch] '{query}' {ep}: {exc}")
+                break
+            if resp.status_code == 200:
+                working = ep
+                for j in resp.json().get("data", []):
+                    city = j.get("job_city") or ""
+                    state = j.get("job_state") or ""
+                    country = j.get("job_country") or ""
+                    loc = ", ".join(p for p in (city, state, country) if p)
+                    out.append({
+                        "title": j.get("job_title", ""),
+                        "company": j.get("employer_name", ""),
+                        "location": loc or ("Remote" if j.get("job_is_remote") else ""),
+                        "remote": bool(j.get("job_is_remote")),
+                        "posted_date": _iso_date(j.get("job_posted_at_datetime_utc")),
+                        "source": "JSearch",
+                        "apply_url": j.get("job_apply_link", ""),
+                        "description": _strip_html(j.get("job_description", "")),
+                    })
+                break
+            msg = (resp.text or "")[:160].replace("\n", " ")
+            print(f"[jsearch] '{query}' {ep}: HTTP {resp.status_code} — {msg}")
+            # Only try the next endpoint when this path simply doesn't exist.
+            if not (resp.status_code == 404 and "does not exist" in msg):
+                break
     return out
 
 
