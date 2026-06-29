@@ -436,7 +436,17 @@ def fetch_jsearch():
                 break
             if resp.status_code == 200:
                 working = ep
-                for j in resp.json().get("data", []):
+                try:
+                    data = resp.json().get("data", [])
+                except Exception:  # noqa: BLE001
+                    data = []
+                # Defensive: only parse dict job objects; never let an unexpected
+                # response shape crash the whole run.
+                items = [j for j in data if isinstance(j, dict)]
+                if not items:
+                    print(f"[jsearch] '{query}' {ep}: HTTP 200 but no job objects "
+                          f"in response (got {type(data).__name__}).")
+                for j in items:
                     city = j.get("job_city") or ""
                     state = j.get("job_state") or ""
                     country = j.get("job_country") or ""
