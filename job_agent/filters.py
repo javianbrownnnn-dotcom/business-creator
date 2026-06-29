@@ -47,7 +47,12 @@ def passes_seniority(job):
         return False, "excluded seniority: vice president"
     # Single-word senior signals matched as whole words (punctuation-proof:
     # catches "VP,", "Sr.", "Manager", "Supervisor", "Lead", etc.).
-    hit = tokens & config.HARD_EXCLUDE_TOKENS
+    hard = config.HARD_EXCLUDE_TOKENS
+    # "Manager" is allowed when a junior qualifier is present (e.g. "Associate
+    # Product Marketing Manager" / "Assistant Marketing Manager").
+    if tokens & config.JUNIOR_TITLE_TOKENS:
+        hard = hard - {"manager", "mgr"}
+    hit = tokens & hard
     if hit:
         return False, f"excluded seniority: {', '.join(sorted(hit))}"
     return True, ""
@@ -95,6 +100,36 @@ def passes_legitimacy(job):
     return True, ""
 
 
+_WORD_NUMS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+              "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+_YEAR_RANGE_RE = re.compile(r"(\d{1,2})\s*(?:-|–|to)\s*\d{1,2}\s*\+?\s*(?:years|yrs)\b")
+_YEAR_SINGLE_RE = re.compile(r"(\d{1,2})\s*\+?\s*(?:years|yrs)\b")
+_YEAR_WORD_RE = re.compile(
+    r"\b(one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:years|yrs)\b")
+
+
+def _required_years(text):
+    """Highest 'minimum years required' the JD asks for (ranges use lower bound)."""
+    reqs = []
+    # Ranges first ("3-5 years" requires 3); then mask them out.
+    for m in _YEAR_RANGE_RE.finditer(text):
+        reqs.append(int(m.group(1)))
+    masked = _YEAR_RANGE_RE.sub(" ", text)
+    for m in _YEAR_SINGLE_RE.finditer(masked):
+        reqs.append(int(m.group(1)))
+    for m in _YEAR_WORD_RE.finditer(masked):
+        reqs.append(_WORD_NUMS[m.group(1)])
+    return max(reqs) if reqs else 0
+
+
+def passes_experience(job):
+    """Drop roles requiring >= EXPERIENCE_MAX_YEARS years (the 'no-chance' fix)."""
+    years = _required_years(_blob(job))
+    if years >= config.EXPERIENCE_MAX_YEARS:
+        return False, f"requires {years}+ years experience"
+    return True, ""
+
+
 def passes_location(job):
     if job.get("remote"):
         return True, ""
@@ -114,7 +149,8 @@ def passes_location(job):
 def keep(job):
     """Run every filter. Return (kept: bool, reason: str)."""
     for check in (passes_keywords, passes_seniority, passes_seo,
-                  passes_legitimacy, passes_recency, passes_location):
+                  passes_legitimacy, passes_experience, passes_recency,
+                  passes_location):
         ok, reason = check(job)
         if not ok:
             return False, reason

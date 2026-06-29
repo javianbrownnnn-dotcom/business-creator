@@ -83,6 +83,15 @@ HARD_EXCLUDE_TOKENS = {
     "director", "vp", "chief", "president", "supervisor", "head",
 }
 
+# Junior qualifiers in a title. When one is present, the word "manager" is NOT
+# treated as senior — e.g. "Associate Product Marketing Manager" (a real new-grad
+# / APMM title) passes, while a bare "...Manager" is still excluded. Other senior
+# tokens (senior, director, vp, head, lead, ...) still exclude regardless.
+JUNIOR_TITLE_TOKENS = {
+    "associate", "coordinator", "assistant", "junior", "jr",
+    "intern", "apprentice", "fellow", "trainee",
+}
+
 # SEO-only roles are excluded per the profile. A role is dropped only if it is
 # *primarily* SEO (SEO in the title) — not merely mentions SEO in passing.
 SEO_TITLE_EXCLUDE = ["seo"]
@@ -104,6 +113,45 @@ SENIORITY_ALLOW_TOKENS = [
 # no generic "General Marketing" roles — keep Product Marketing, Email/Lifecycle,
 # Content/Copywriting, Paid Ads, and Other.
 EXCLUDED_FUNCTIONS = {"General Marketing"}
+
+# --- Experience-requirement gate (the biggest "no-chance" fix) ----------------
+# Many listings labeled "Associate/Specialist" actually demand 3-5 years. Drop a
+# role when its description requires at least this many years. (Ranges like
+# "1-2 years" use the LOWER bound, so "0-2"/"1-2" pass but "3-5"/"5+" are cut.)
+EXPERIENCE_MAX_YEARS = 3
+
+# Phrases that confirm a role is realistically attainable at intern / 0-2yr level.
+# Their presence boosts a role's score (see scoring.py).
+ENTRY_SIGNALS = [
+    "entry level", "entry-level", "early career", "early-career",
+    "new grad", "new graduate", "recent graduate", "recent grad",
+    "0-1 year", "0-2 years", "1-2 years", "up to 2 years", "no prior experience",
+    "no experience required", "no experience necessary", "internship", "intern",
+    "apprenticeship", "rotational program", "development program",
+    "training program", "we'll train you", "we will train you", "early-career",
+]
+
+# Senior-scope language that signals a role is really mid/senior even without a
+# senior title or a stated year count. Penalized in scoring (not a hard cut, to
+# avoid false drops — the year gate + title gate do the hard filtering).
+SENIOR_SCOPE_SIGNALS = [
+    "proven track record", "demonstrated track record", "deep expertise",
+    "deep experience", "subject matter expert", "thought leader",
+    "own the strategy", "own the roadmap", "set the vision", "set the strategy",
+    "define the strategy", "drive the strategy", "end-to-end ownership",
+    "own end-to-end", "lead and mentor", "mentor junior", "manage a team",
+    "people management", "direct reports", "manage agency", "manage vendor",
+    "agency relationships", "vendor relationships",
+]
+
+# Growth marketing terms — Growth is now its OWN kept Function (not General
+# Marketing), so these roles surface instead of getting excluded.
+GROWTH_KEYWORDS = [
+    "growth marketing", "growth", "acquisition", "activation", "funnel",
+    "experimentation", "a/b testing", "ab testing", "conversion rate optimization",
+    "cohort", "paid acquisition", "performance marketing", "ltv", "cac",
+    "amplitude", "mixpanel",
+]
 
 # --- Legitimacy / anti-scam filter -------------------------------------------
 # Aggregators (esp. Adzuna) carry MLM / commission-only / door-to-door "marketing"
@@ -148,9 +196,14 @@ SCORE_WEIGHTS = {
     "startup": 6,
     # generic marketing relevance
     "generic_marketing": 8,
+    # growth marketing relevance
+    "growth": 12,
+    # explicit entry-level signals ("new grad", "0-2 years", "training program")
+    "entry_signal": 14,
     # penalties (negative)
     "seo_only_penalty": -25,
     "video_design_penalty": -12,
+    "senior_scope_penalty": -16,   # "own the strategy", "manage a team", etc.
 }
 
 EMAIL_LIFECYCLE_KEYWORDS = [
