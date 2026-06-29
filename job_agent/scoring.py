@@ -49,7 +49,17 @@ def score(job):
     if "marketing" in blob:
         s += w["generic_marketing"]
 
+    # Growth marketing relevance
+    if any(k in blob for k in config.GROWTH_KEYWORDS):
+        s += w["growth"]
+
+    # Explicit entry-level signals float realistically-attainable roles to the top
+    if any(k in blob for k in config.ENTRY_SIGNALS):
+        s += w["entry_signal"]
+
     # --- penalties (still surfaced, just ranked lower) ---
+    if any(k in blob for k in config.SENIOR_SCOPE_SIGNALS):
+        s += w["senior_scope_penalty"]
     if "seo" in blob and "seo" not in title:
         s += w["seo_only_penalty"] // 2  # mentions SEO but not primary -> mild
     if any(k in blob for k in config.DOWNRANK_KEYWORDS):
@@ -65,6 +75,13 @@ def classify_function(job):
         return "Email / Lifecycle"
     if any(k in blob for k in config.PRODUCT_MARKETING_KEYWORDS):
         return "Product Marketing"
+    # Growth — its own kept bucket (not General Marketing, which is excluded).
+    title = (job.get("title") or "").lower()
+    if "growth" in title or any(k in blob for k in (
+        "growth marketing", "performance marketing", "demand generation",
+        "demand gen", "user acquisition", "paid acquisition",
+    )):
+        return "Growth"
     if any(k in blob for k in ("copywrit", "content", "editorial", "writer", "writing")):
         return "Content / Copywriting"
     if any(k in blob for k in ("paid", "ppc", "performance marketing", "demand gen",
