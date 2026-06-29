@@ -401,6 +401,55 @@ def fetch_adzuna():
     return out
 
 
+# --- JSearch via RapidAPI (keyed — Google for Jobs aggregator) ----------------
+
+def fetch_jsearch():
+    """Pull from JSearch (LinkedIn/Indeed/Glassdoor via Google for Jobs)."""
+    key = os.environ.get("RAPIDAPI_KEY")
+    if not key:
+        print("[jsearch] no RAPIDAPI_KEY set — skipping gracefully.")
+        return []
+    out = []
+    headers = {
+        "X-RapidAPI-Key": key,
+        "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+        "Accept": "application/json",
+    }
+    for query in config.JSEARCH_QUERIES:
+        try:
+            resp = _get(
+                "https://jsearch.p.rapidapi.com/search",
+                params={
+                    "query": f"{query} in United States",
+                    "page": 1,
+                    "num_pages": 1,
+                    "date_posted": config.JSEARCH_DATE_POSTED,
+                },
+                headers=headers,
+            )
+            if resp.status_code != 200:
+                print(f"[jsearch] '{query}': HTTP {resp.status_code}")
+                continue
+            for j in resp.json().get("data", []):
+                city = j.get("job_city") or ""
+                state = j.get("job_state") or ""
+                country = j.get("job_country") or ""
+                loc = ", ".join(p for p in (city, state, country) if p)
+                out.append({
+                    "title": j.get("job_title", ""),
+                    "company": j.get("employer_name", ""),
+                    "location": loc or ("Remote" if j.get("job_is_remote") else ""),
+                    "remote": bool(j.get("job_is_remote")),
+                    "posted_date": _iso_date(j.get("job_posted_at_datetime_utc")),
+                    "source": "JSearch",
+                    "apply_url": j.get("job_apply_link", ""),
+                    "description": _strip_html(j.get("job_description", "")),
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[jsearch] '{query}': {exc}")
+    return out
+
+
 # --- Orchestrator -------------------------------------------------------------
 
 def fetch_all():
@@ -425,5 +474,7 @@ def fetch_all():
         jobs += fetch_weworkremotely()
     if enabled.get("adzuna"):
         jobs += fetch_adzuna()
+    if enabled.get("jsearch"):
+        jobs += fetch_jsearch()
     print(f"[sources] fetched {len(jobs)} raw postings across enabled sources.")
     return jobs

@@ -54,7 +54,20 @@ SOURCES_ENABLED = {
     "jobicy": True,      # free, no key — remote jobs, industry=marketing
     "weworkremotely": True,  # free RSS, no key — remote marketing feeds
     "adzuna": True,      # keyed (free dev tier); auto-skips if no ADZUNA_APP_* set
+    "jsearch": True,     # keyed (RapidAPI free tier); auto-skips if no RAPIDAPI_KEY
 }
+
+# --- JSearch (RapidAPI) -------------------------------------------------------
+# Taps Google for Jobs (LinkedIn / Indeed / Glassdoor / ZipRecruiter). Needs a
+# RapidAPI key in env var RAPIDAPI_KEY; skips gracefully if unset. Each query is
+# one API request, so keep the list tight to stay inside the free monthly quota.
+JSEARCH_QUERIES = [
+    "lifecycle marketing",
+    "email marketing coordinator",
+    "growth marketing associate",
+    "product marketing associate",
+]
+JSEARCH_DATE_POSTED = "week"   # all | today | 3days | week | month
 
 # --- Recency ------------------------------------------------------------------
 POSTED_WITHIN_DAYS = 7   # only keep roles first posted within this many days
