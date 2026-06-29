@@ -437,29 +437,36 @@ def fetch_jsearch():
             if resp.status_code == 200:
                 working = ep
                 try:
-                    data = resp.json().get("data", [])
+                    payload = resp.json()
                 except Exception:  # noqa: BLE001
-                    data = []
-                # Defensive: only parse dict job objects; never let an unexpected
-                # response shape crash the whole run.
-                items = [j for j in data if isinstance(j, dict)]
+                    payload = {}
+                data = payload.get("data", [])
+                # /search returns data=[jobs]; /search-v2 returns
+                # data={"jobs":[...], "cursor":...}. Unwrap both shapes.
+                if isinstance(data, dict):
+                    data = data.get("jobs") or data.get("results") or []
+                items = [j for j in data if isinstance(j, dict)] if isinstance(data, list) else []
                 if not items:
-                    print(f"[jsearch] '{query}' {ep}: HTTP 200 but no job objects "
-                          f"in response (got {type(data).__name__}).")
+                    print(f"[jsearch] '{query}' {ep}: HTTP 200 but no jobs parsed.")
                 for j in items:
-                    city = j.get("job_city") or ""
-                    state = j.get("job_state") or ""
-                    country = j.get("job_country") or ""
+                    city = j.get("job_city") or j.get("city") or ""
+                    state = j.get("job_state") or j.get("state") or ""
+                    country = j.get("job_country") or j.get("country") or ""
                     loc = ", ".join(p for p in (city, state, country) if p)
+                    remote = bool(j.get("job_is_remote") or j.get("is_remote"))
                     out.append({
-                        "title": j.get("job_title", ""),
-                        "company": j.get("employer_name", ""),
-                        "location": loc or ("Remote" if j.get("job_is_remote") else ""),
-                        "remote": bool(j.get("job_is_remote")),
-                        "posted_date": _iso_date(j.get("job_posted_at_datetime_utc")),
+                        "title": j.get("job_title") or j.get("title") or "",
+                        "company": (j.get("employer_name") or j.get("company_name")
+                                    or j.get("employer") or ""),
+                        "location": loc or ("Remote" if remote else ""),
+                        "remote": remote,
+                        "posted_date": _iso_date(j.get("job_posted_at_datetime_utc")
+                                                 or j.get("job_posted_at") or j.get("posted_at")),
                         "source": "JSearch",
-                        "apply_url": j.get("job_apply_link", ""),
-                        "description": _strip_html(j.get("job_description", "")),
+                        "apply_url": (j.get("job_apply_link") or j.get("apply_link")
+                                      or j.get("url") or ""),
+                        "description": _strip_html(j.get("job_description")
+                                                   or j.get("description") or ""),
                     })
                 break
             msg = (resp.text or "")[:160].replace("\n", " ")
