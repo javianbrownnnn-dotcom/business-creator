@@ -3,10 +3,12 @@
     "affirm": -6
   },
   "functions": {
-    "Email / Lifecycle": 5
+    "Email / Lifecycle": 12
   },
   "generated": "2026-06-30",
-  "n_applied": 2,
+  "n_applied": 5,
   "n_skipped": 1,
-  "tokens": {}
+  "tokens": {
+    "associate": 8
+  }
 }
