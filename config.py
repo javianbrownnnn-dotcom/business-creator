@@ -387,6 +387,24 @@ JOBS_DB_PATH = os.path.join(DATA_DIR, "jobs.db")
 # Tracks the last date the daily email was sent, so multiple morning cron
 # attempts (added for reliability) still produce at most one email per day.
 LAST_EMAIL_DATE_PATH = os.path.join(DATA_DIR, "last_email_date.txt")
+# Preferences the agent learns from what you Skip / Apply on the Notion board.
+LEARNED_PREFS_PATH = os.path.join(DATA_DIR, "learned_prefs.json")
+
+# --- Learning-from-skips tuning (all bounded, so it only nudges ranking) ------
+LEARN_MIN_OCCURRENCES = 2     # a title keyword needs this many sightings to count
+LEARN_TOKEN_STEP = 4          # points per net (applied-skipped) keyword occurrence
+LEARN_TOKEN_CAP = 8           # max +/- per keyword
+LEARN_FUNCTION_STEP = 5       # points per net function preference
+LEARN_FUNCTION_CAP = 12
+LEARN_COMPANY_STEP = 6        # penalty per skip for a never-applied company
+LEARN_COMPANY_CAP = 15
+LEARN_ADJ_CLAMP = 22          # total learned adjustment per role is capped here
+# Generic words ignored when learning title keywords (too common to be a signal).
+LEARN_STOPWORDS = {
+    "the", "and", "of", "for", "to", "a", "an", "in", "on", "at", "with", "or",
+    "by", "marketing", "remote", "us", "usa", "united", "states", "job", "jobs",
+    "full", "time", "part", "hybrid", "new", "team", "role", "and/or",
+}
 
 # Polite HTTP defaults for all outbound scraping/API calls.
 USER_AGENT = "marketing-job-agent/1.0 (personal job search; contact via repo)"
