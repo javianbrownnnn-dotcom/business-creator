@@ -1,14 +1,18 @@
 {
   "companies": {
-    "affirm": -6
+    "affirm": -6,
+    "gusto": -6
   },
   "functions": {
-    "Email / Lifecycle": 12
+    "Content / Copywriting": 5,
+    "Email / Lifecycle": 12,
+    "Product Marketing": -5
   },
   "generated": "2026-06-30",
-  "n_applied": 5,
-  "n_skipped": 1,
+  "n_applied": 9,
+  "n_skipped": 2,
   "tokens": {
-    "associate": 8
+    "associate": 8,
+    "growth": 8
   }
 }
