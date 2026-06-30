@@ -12,7 +12,7 @@ from datetime import date
 
 import config
 from shared import notify, notion
-from job_agent import filters, scoring, sources, storage
+from job_agent import filters, learning, scoring, sources, storage
 
 
 def _notion_properties(job):
@@ -97,18 +97,20 @@ def _email_bodies(rows):
     return subject, text_body, "\n".join(html)
 
 
-def _existing_notion_keys():
-    """
-    (company, title) of every row already on the Job Leads board, lowercased.
-    Used as a second dedup layer so a stale/lost SQLite DB can never produce
-    duplicate Notion rows. Returns an empty set on any failure (fail open).
-    """
-    keys = set()
+def _fetch_board_rows():
+    """All Job Leads pages (used for dedup AND skip/apply learning). [] on failure."""
     try:
         rows = notion.query_database(config.JOB_NOTION_DATABASE_ID)
+        print(f"[notion] loaded {len(rows)} board row(s).")
+        return rows
     except Exception as exc:  # noqa: BLE001
-        print(f"[dedup] couldn't load existing Notion rows (continuing): {exc}")
-        return keys
+        print(f"[notion] couldn't load board rows (continuing): {exc}")
+        return []
+
+
+def _keys_from_rows(rows):
+    """(company, title) of every board row, lowercased — second dedup layer."""
+    keys = set()
     for page in rows:
         title = company = ""
         for name, prop in page.get("properties", {}).items():
@@ -118,7 +120,6 @@ def _existing_notion_keys():
             elif name.lower() == "company" and ptype == "rich_text" and prop.get("rich_text"):
                 company = "".join(t.get("plain_text", "") for t in prop["rich_text"])
         keys.add((company.strip().lower(), title.strip().lower()))
-    print(f"[dedup] loaded {len(keys)} existing Notion row(s) for dedup.")
     return keys
 
 
@@ -148,7 +149,10 @@ def run():
     raw = sources.fetch_all()
 
     notion_ok = bool(os.environ.get("NOTION_TOKEN"))
-    existing_keys = _existing_notion_keys() if notion_ok else set()
+    board_rows = _fetch_board_rows() if notion_ok else []
+    existing_keys = _keys_from_rows(board_rows)
+    # Learn from what you've Skipped / Applied, then nudge scores accordingly.
+    prefs = learning.learn(board_rows) if notion_ok else learning.load()
 
     # Filter + score, dropping anything already seen.
     kept = []
@@ -170,11 +174,14 @@ def run():
             continue
         existing_keys.add(ckey)
         # Drop excluded Function buckets (e.g. "General Marketing") per config.
-        if scoring.classify_function(job) in config.EXCLUDED_FUNCTIONS:
+        fn = scoring.classify_function(job)
+        if fn in config.EXCLUDED_FUNCTIONS:
             dropped += 1
             continue
         seen_ids.add(jid)
-        job["fit_score"] = scoring.score(job)
+        job["_function"] = fn
+        # Base fit score + bounded learned adjustment from your skip/apply history.
+        job["fit_score"] = max(0, min(100, scoring.score(job) + learning.adjustment(job, prefs)))
         job["_id"] = jid
         kept.append(job)
 
