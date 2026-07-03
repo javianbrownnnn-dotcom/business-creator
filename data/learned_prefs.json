@@ -1,18 +1,17 @@
 {
   "companies": {
+    "2.halvolink": -6,
     "affirm": -6,
     "gusto": -6
   },
   "functions": {
-    "Content / Copywriting": 5,
-    "Email / Lifecycle": 12,
+    "Email / Lifecycle": -10,
     "Product Marketing": -5
   },
   "generated": "2026-07-03",
-  "n_applied": 10,
-  "n_skipped": 2,
+  "n_applied": 0,
+  "n_skipped": 3,
   "tokens": {
-    "associate": 8,
-    "growth": 8
+    "lifecycle": -8
   }
 }
