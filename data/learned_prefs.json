@@ -5,13 +5,15 @@
     "gusto": -6
   },
   "functions": {
-    "Email / Lifecycle": -10,
+    "Email / Lifecycle": 5,
     "Product Marketing": -5
   },
-  "generated": "2026-07-09",
-  "n_applied": 0,
+  "generated": "2026-07-10",
+  "n_applied": 3,
   "n_skipped": 3,
   "tokens": {
-    "lifecycle": -8
+    "email": 8,
+    "lifecycle": -8,
+    "specialist": 8
   }
 }
