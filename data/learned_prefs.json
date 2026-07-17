@@ -1,19 +1,8 @@
 {
-  "companies": {
-    "2.halvolink": -6,
-    "affirm": -6,
-    "gusto": -6
-  },
-  "functions": {
-    "Email / Lifecycle": 10,
-    "Product Marketing": -5
-  },
-  "generated": "2026-07-16",
-  "n_applied": 4,
-  "n_skipped": 3,
-  "tokens": {
-    "email": 8,
-    "lifecycle": -8,
-    "specialist": 8
-  }
+  "companies": {},
+  "functions": {},
+  "generated": "2026-07-17",
+  "n_applied": 0,
+  "n_skipped": 0,
+  "tokens": {}
 }
