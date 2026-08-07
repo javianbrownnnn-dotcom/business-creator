@@ -53,6 +53,8 @@ SOURCES_ENABLED = {
     "remotive": True,    # free, no key — remote jobs, marketing category
     "jobicy": True,      # free, no key — remote jobs, industry=marketing
     "weworkremotely": True,  # free RSS, no key — remote marketing feeds
+    "arbeitnow": True,   # free, no key — public job-board API (many remote roles)
+    "himalayas": True,   # free, no key — remote-jobs API
     "adzuna": True,      # keyed (free dev tier); auto-skips if no ADZUNA_APP_* set
     "jsearch": True,     # keyed (RapidAPI free tier); auto-skips if no RAPIDAPI_KEY
 }
