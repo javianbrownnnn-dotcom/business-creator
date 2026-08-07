@@ -1,0 +1,36 @@
+name: Job Leads Purge (older than 2 weeks, on-demand)
+
+# One-off maintenance: archive every Job Leads row that has been on the board
+# for more than `days` (default 14) — regardless of Applied/Skip status — to
+# Notion's trash (recoverable for 30 days). Manual trigger only; never scheduled.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Archive rows older than this many days"
+        required: false
+        default: "14"
+
+permissions:
+  contents: read
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Purge old leads
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          PURGE_OLDER_THAN_DAYS: ${{ github.event.inputs.days }}
+        run: python -m job_agent.purge_old
