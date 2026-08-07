@@ -339,6 +339,73 @@ def fetch_weworkremotely():
     return out
 
 
+# --- Arbeitnow (free, no key) -------------------------------------------------
+
+def fetch_arbeitnow(max_pages=3):
+    """Free public job board API (no key). Global, many remote roles."""
+    out = []
+    base = "https://www.arbeitnow.com/api/job-board-api"
+    for page in range(1, max_pages + 1):
+        try:
+            resp = _get(base, params={"page": page})
+            if resp.status_code != 200:
+                print(f"[arbeitnow] page {page}: HTTP {resp.status_code}")
+                break
+            data = resp.json().get("data", [])
+            if not data:
+                break
+            for j in data:
+                tags = j.get("tags") or []
+                job_types = j.get("job_types") or []
+                loc = j.get("location", "") or ""
+                remote = bool(j.get("remote")) or _looks_remote(loc)
+                out.append({
+                    "title": j.get("title", ""),
+                    "company": j.get("company_name", ""),
+                    "location": loc or ("Remote" if remote else ""),
+                    "remote": remote,
+                    "posted_date": _iso_date(j.get("created_at")),
+                    "source": "Arbeitnow",
+                    "apply_url": j.get("url", ""),
+                    "description": _strip_html(j.get("description", ""))
+                    + " " + " ".join(tags) + " " + " ".join(job_types),
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[arbeitnow] page {page}: {exc}")
+            break
+    return out
+
+
+# --- Himalayas (free, no key) -------------------------------------------------
+
+def fetch_himalayas(limit=100):
+    """Free remote-jobs API (no key). Every posting here is remote."""
+    out = []
+    try:
+        resp = _get("https://himalayas.app/jobs/api", params={"limit": limit})
+        if resp.status_code != 200:
+            print(f"[himalayas] HTTP {resp.status_code}")
+            return out
+        for j in resp.json().get("jobs", []):
+            locs = j.get("locationRestrictions") or []
+            loc = ", ".join(locs) if isinstance(locs, list) else str(locs or "")
+            cats = j.get("categories") or []
+            out.append({
+                "title": j.get("title", ""),
+                "company": j.get("companyName", ""),
+                "location": loc or "Remote",
+                "remote": True,
+                "posted_date": _iso_date(j.get("pubDate")),
+                "source": "Himalayas",
+                "apply_url": j.get("applicationLink") or j.get("guid", ""),
+                "description": _strip_html(j.get("description") or j.get("excerpt", ""))
+                + " " + " ".join(cats if isinstance(cats, list) else []),
+            })
+    except Exception as exc:  # noqa: BLE001
+        print(f"[himalayas] {exc}")
+    return out
+
+
 # --- Adzuna (optional — needs API key) ---------------------------------------
 
 def _adzuna_page(app_id, app_key, page, where=None):
@@ -499,6 +566,10 @@ def fetch_all():
         jobs += fetch_jobicy()
     if enabled.get("weworkremotely"):
         jobs += fetch_weworkremotely()
+    if enabled.get("arbeitnow"):
+        jobs += fetch_arbeitnow()
+    if enabled.get("himalayas"):
+        jobs += fetch_himalayas()
     if enabled.get("adzuna"):
         jobs += fetch_adzuna()
     if enabled.get("jsearch"):
