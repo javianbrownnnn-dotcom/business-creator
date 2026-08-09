@@ -19,7 +19,9 @@ import config
 from shared import notion
 
 # "Over 2 weeks" = older than 14 days. Overridable via env for a one-off tweak.
-PURGE_OLDER_THAN_DAYS = int(os.environ.get("PURGE_OLDER_THAN_DAYS", "14"))
+# `or "14"` so an empty env value (e.g. a scheduled run with no input) still
+# falls back to 14 instead of crashing on int("").
+PURGE_OLDER_THAN_DAYS = int(os.environ.get("PURGE_OLDER_THAN_DAYS") or "14")
 
 
 def _page_title(page):
