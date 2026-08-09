@@ -1,8 +1,9 @@
 name: Job Leads Purge (older than 2 weeks, on-demand)
 
-# One-off maintenance: archive every Job Leads row that has been on the board
-# for more than `days` (default 14) — regardless of Applied/Skip status — to
-# Notion's trash (recoverable for 30 days). Manual trigger only; never scheduled.
+# Maintenance: archive every Job Leads row that has been on the board for more
+# than `days` (default 14) — regardless of Applied/Skip status — to Notion's
+# trash (recoverable for 30 days). Runs automatically every week, and can also
+# be triggered manually (with a custom age cutoff) at any time.
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +11,11 @@ on:
         description: "Archive rows older than this many days"
         required: false
         default: "14"
+  schedule:
+    # Every Monday at 13:05 UTC (~8-9 AM US Eastern) so the board starts the
+    # week trimmed. GitHub cron can run late/skip; a weekly miss just means the
+    # next Monday sweeps it — old rows are only archived, never lost.
+    - cron: "5 13 * * 1"
 
 permissions:
   contents: read
@@ -32,5 +38,5 @@ jobs:
       - name: Purge old leads
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          PURGE_OLDER_THAN_DAYS: ${{ github.event.inputs.days }}
+          PURGE_OLDER_THAN_DAYS: ${{ github.event.inputs.days || '14' }}
         run: python -m job_agent.purge_old
