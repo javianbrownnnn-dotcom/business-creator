@@ -44,9 +44,9 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
-          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
-          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          # Adzuna / RapidAPI keys intentionally NOT passed: those sources are
+          # disabled because they require a billable account. Every enabled
+          # source is key-free, so there is nothing here that can incur a charge.
           # Reused for the daily lead email (same creds as Agent 2's Gmail).
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

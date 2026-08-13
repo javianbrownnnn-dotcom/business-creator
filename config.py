@@ -43,6 +43,25 @@ ASHBY_SLUGS = [
     "gem", "browserbase", "sierra",
 ]
 
+# SmartRecruiters / Recruitee / Workable are ALSO free public ATS boards with no
+# API key and no account — same deal as Greenhouse/Lever/Ashby. Added to replace
+# the reach lost by dropping the keyed (billable) aggregators. Unknown slugs just
+# 404 and are skipped, so over-listing costs nothing but a log line.
+SMARTRECRUITERS_SLUGS = [
+    "Visa", "Bosch", "Ubisoft", "McDonalds", "PublicisGroupe",
+    "Skechers", "Sodexo", "Avery", "WPPGroup", "Getty-Images",
+]
+
+RECRUITEE_SLUGS = [
+    "dept", "catawiki", "framer", "mollie", "usabilla",
+    "nmbrs", "studocu", "otrium",
+]
+
+WORKABLE_SLUGS = [
+    "wonderschool", "veed", "kraken", "podium", "hopin",
+    "unbabel", "gympass", "deel",
+]
+
 # --- Which sources to enable --------------------------------------------------
 SOURCES_ENABLED = {
     "greenhouse": True,
@@ -55,8 +74,15 @@ SOURCES_ENABLED = {
     "weworkremotely": True,  # free RSS, no key — remote marketing feeds
     "arbeitnow": True,   # free, no key — public job-board API (many remote roles)
     "himalayas": True,   # free, no key — remote-jobs API
-    "adzuna": True,      # keyed (free dev tier); auto-skips if no ADZUNA_APP_* set
-    "jsearch": True,     # keyed (RapidAPI free tier); auto-skips if no RAPIDAPI_KEY
+    "smartrecruiters": True,  # free, no key — public ATS boards (per company)
+    "recruitee": True,        # free, no key — public ATS boards (per company)
+    "workable": True,         # free, no key — public ATS boards (per company)
+    # Disabled: these need a paid-capable account. Adzuna requires an API
+    # account and JSearch bills through a RapidAPI subscription (overage is
+    # chargeable), so neither is free-and-clear. Everything above needs NO key
+    # and NO account — zero billing risk, ever.
+    "adzuna": False,
+    "jsearch": False,
 }
 
 # --- JSearch (RapidAPI) -------------------------------------------------------
@@ -285,6 +311,18 @@ ADZUNA_CITIES = [
 ]
 ADZUNA_PAGES_PER_CITY = 1     # 1 page (~20 roles) per city keeps it fast
 ADZUNA_NATIONAL_PAGES = 2     # extra national pass for remote-friendly roles
+
+# --- The Muse geographic targeting -------------------------------------------
+# The Muse is free and needs NO key, and its API takes a `location` filter — so
+# it now carries the metro-specific, in-person coverage that Adzuna used to
+# provide, at zero cost. Each entry is one extra request per experience level.
+THEMUSE_LOCATIONS = [
+    "Miami, FL", "Fort Lauderdale, FL", "Orlando, FL",
+    "Nashville, TN", "Dallas, TX", "Fort Worth, TX",
+    "Denver, CO", "New York, NY", "Washington, DC",
+    "Los Angeles, CA", "San Francisco, CA", "San Diego, CA",
+]
+THEMUSE_LOCATION_PAGES = 2    # pages per location per level
 
 
 # =============================================================================

@@ -213,6 +213,49 @@ def fetch_themuse(max_pages=5):
             except Exception as exc:  # noqa: BLE001
                 print(f"[themuse] page {page} ({level}): {exc}")
                 break
+
+    out += _fetch_themuse_locations()
+    return out
+
+
+def _fetch_themuse_locations():
+    """
+    Metro-targeted pass over the same free Muse API (no key). This carries the
+    in-person/local coverage that the billable aggregators used to provide.
+    """
+    out = []
+    base = "https://www.themuse.com/api/public/jobs"
+    for loc_query in config.THEMUSE_LOCATIONS:
+        for level in ("Entry Level", "Internship"):
+            for page in range(config.THEMUSE_LOCATION_PAGES):
+                try:
+                    resp = _get(base, params={
+                        "category": "Marketing",
+                        "level": level,
+                        "location": loc_query,
+                        "page": page,
+                    })
+                    if resp.status_code != 200:
+                        break
+                    results = resp.json().get("results", [])
+                    if not results:
+                        break
+                    for r in results:
+                        locs = [l.get("name", "") for l in (r.get("locations") or [])]
+                        loc = ", ".join(locs)
+                        out.append({
+                            "title": r.get("name", ""),
+                            "company": (r.get("company") or {}).get("name", ""),
+                            "location": loc,
+                            "remote": _looks_remote(loc),
+                            "posted_date": _iso_date(r.get("publication_date")),
+                            "source": "The Muse",
+                            "apply_url": (r.get("refs") or {}).get("landing_page", ""),
+                            "description": _strip_html(r.get("contents", "")),
+                        })
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[themuse] {loc_query} p{page} ({level}): {exc}")
+                    break
     return out
 
 
@@ -406,6 +449,117 @@ def fetch_himalayas(limit=100):
     return out
 
 
+# --- SmartRecruiters (free, no key — public ATS boards) -----------------------
+
+def fetch_smartrecruiters(slugs):
+    out = []
+    for slug in slugs:
+        url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings"
+        try:
+            resp = _get(url, params={"limit": 100})
+            if resp.status_code != 200:
+                print(f"[smartrecruiters] {slug}: HTTP {resp.status_code}")
+                continue
+            for p in resp.json().get("content", []):
+                if not isinstance(p, dict):
+                    continue
+                loc_obj = p.get("location") or {}
+                loc = ", ".join(x for x in (
+                    loc_obj.get("city"), loc_obj.get("region"), loc_obj.get("country")
+                ) if x)
+                company = (p.get("company") or {}).get("name") or slug
+                # The list endpoint omits the full ad; department/function still
+                # give the keyword filters something beyond the title.
+                extra = " ".join(str((p.get(k) or {}).get("label", ""))
+                                 for k in ("department", "function", "industry"))
+                out.append({
+                    "title": p.get("name", ""),
+                    "company": company,
+                    "location": loc,
+                    "remote": bool(loc_obj.get("remote")) or _looks_remote(loc),
+                    "posted_date": _iso_date(p.get("releasedDate") or p.get("createdOn")),
+                    "source": "SmartRecruiters",
+                    "apply_url": f"https://jobs.smartrecruiters.com/{slug}/{p.get('id','')}",
+                    "description": extra.strip(),
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[smartrecruiters] {slug}: {exc}")
+    return out
+
+
+# --- Recruitee (free, no key — public ATS boards) -----------------------------
+
+def fetch_recruitee(slugs):
+    out = []
+    for slug in slugs:
+        url = f"https://{slug}.recruitee.com/api/offers/"
+        try:
+            resp = _get(url)
+            if resp.status_code != 200:
+                print(f"[recruitee] {slug}: HTTP {resp.status_code}")
+                continue
+            for o in resp.json().get("offers", []):
+                if not isinstance(o, dict):
+                    continue
+                loc = ", ".join(x for x in (o.get("city"), o.get("country")) if x) \
+                    or (o.get("location") or "")
+                desc = _strip_html(
+                    (o.get("description") or "") + " " + (o.get("requirements") or "")
+                )
+                out.append({
+                    "title": o.get("title", ""),
+                    "company": o.get("company_name") or slug.replace("-", " ").title(),
+                    "location": loc,
+                    "remote": bool(o.get("remote")) or _looks_remote(loc),
+                    "posted_date": _iso_date(o.get("published_at") or o.get("created_at")),
+                    "source": "Recruitee",
+                    "apply_url": o.get("careers_apply_url") or o.get("careers_url", ""),
+                    "description": desc,
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[recruitee] {slug}: {exc}")
+    return out
+
+
+# --- Workable (free, no key — public ATS boards) ------------------------------
+
+def fetch_workable(slugs):
+    out = []
+    for slug in slugs:
+        url = f"https://apply.workable.com/api/v1/widget/accounts/{slug}"
+        try:
+            resp = _get(url, params={"details": "true"})
+            if resp.status_code != 200:
+                print(f"[workable] {slug}: HTTP {resp.status_code}")
+                continue
+            data = resp.json()
+            company = data.get("name") or slug.replace("-", " ").title()
+            for j in data.get("jobs", []):
+                if not isinstance(j, dict):
+                    continue
+                loc_obj = j.get("location") or {}
+                if isinstance(loc_obj, dict):
+                    loc = ", ".join(x for x in (
+                        loc_obj.get("city"), loc_obj.get("region"), loc_obj.get("country")
+                    ) if x)
+                    telecommuting = bool(loc_obj.get("telecommuting"))
+                else:
+                    loc, telecommuting = str(loc_obj or ""), False
+                out.append({
+                    "title": j.get("title", ""),
+                    "company": company,
+                    "location": loc,
+                    "remote": telecommuting or _looks_remote(loc),
+                    "posted_date": _iso_date(j.get("published_on") or j.get("created_at")),
+                    "source": "Workable",
+                    "apply_url": j.get("url") or j.get("shortlink", ""),
+                    "description": _strip_html(j.get("description", "")),
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[workable] {slug}: {exc}")
+    return out
+
+
 # --- Adzuna (optional — needs API key) ---------------------------------------
 
 def _adzuna_page(app_id, app_key, page, where=None):
@@ -570,6 +724,12 @@ def fetch_all():
         jobs += fetch_arbeitnow()
     if enabled.get("himalayas"):
         jobs += fetch_himalayas()
+    if enabled.get("smartrecruiters"):
+        jobs += fetch_smartrecruiters(config.SMARTRECRUITERS_SLUGS)
+    if enabled.get("recruitee"):
+        jobs += fetch_recruitee(config.RECRUITEE_SLUGS)
+    if enabled.get("workable"):
+        jobs += fetch_workable(config.WORKABLE_SLUGS)
     if enabled.get("adzuna"):
         jobs += fetch_adzuna()
     if enabled.get("jsearch"):
