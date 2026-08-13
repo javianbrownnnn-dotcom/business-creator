@@ -1,8 +1,10 @@
 {
   "companies": {},
-  "functions": {},
+  "functions": {
+    "Email / Lifecycle": 10
+  },
   "generated": "2026-08-13",
-  "n_applied": 0,
+  "n_applied": 2,
   "n_skipped": 0,
   "tokens": {}
 }
